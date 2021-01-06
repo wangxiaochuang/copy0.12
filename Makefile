@@ -4,12 +4,12 @@ C_SOURCES = $(shell find . -name "*.c")
 C_OBJECTS = $(patsubst %.c, %.o, $(C_SOURCES))
 S_SOURCES = $(shell find . -name "*.S" -not -name bootsect.S -not -name setup.S)
 S_OBJECTS = $(patsubst %.S, %.o, $(S_SOURCES))
-OBJECTS = $(C_OBJECTS) $(S_OBJECTS)
+OBJECTS = $(S_OBJECTS) $(C_OBJECTS)
 
 VHD = ../myos.vhd
 
 CC = gcc
-C_FLAGS = -c -Wall -m32 -ggdb -gstabs+ -nostdinc -fno-pic -fno-builtin -fno-stack-protector -I include
+C_FLAGS = -c -m32 -O0 -fno-asynchronous-unwind-tables -ffreestanding -mpreferred-stack-boundary=2  -I include
 LD = ld
 LD_FLAGS = -N -Ttext 0x0 --oformat binary -nostdlib
 
@@ -32,10 +32,10 @@ system.bin: $(OBJECTS)
 	$(LD) $(LD_FLAGS) -e startup_32 -o $@ $^
 
 %.o: %.S
-	$(CC) $(C_FLAGS) $< -o $@
+	$(CC) -I include -c -o $@ $<
 
 %.o: %.c
-	$(CC) $(C_FLAGS) $< -o $@
+	$(CC) $(C_FLAGS) -o $@ $<
 
 .PHONY: bochs
 bochs:

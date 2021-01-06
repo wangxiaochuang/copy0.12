@@ -43,7 +43,7 @@ go:
     mov $SYSSEG, %ax
     mov %ax, %ds
 
-    mov $10, %cx
+    mov $100, %cx
     mov $0x5, %eax
     mov $0, %ebx
     1:
