@@ -125,7 +125,7 @@ idt_48:
 
 gdt_48:
     .word 0x800         # gdt limit=2048, 256 GDT entries
-    .word 512+gdt, 0x9  # gdt base = 0x9xxxx
+    .word 512+gdt, 0x9  # gdt base = 0x90200+gdt
 
 msg1:
     .byte 13, 10

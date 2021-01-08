@@ -20,6 +20,8 @@ void main(void) {
     }
 
     main_memory_start = buffer_memory_end;
+    
+    mem_init(main_memory_start, memory_end);
 
     while(1){};
 }
