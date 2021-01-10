@@ -1,3 +1,9 @@
+#define sti() __asm__ ("sti"::)			/* 开中断 */
+#define cli() __asm__ ("cli"::)			/* 关中断 */
+#define nop() __asm__ ("nop"::)			/* 空操作 */
+
+#define iret() __asm__ ("iret"::)		/* 中断返回 */
+
 #define _set_gate(gate_addr, type, dpl, addr)	            \
     __asm__ ("movw %%dx,%%ax\n\t"                           \
             "movw %0,%%dx\n\t"                              \

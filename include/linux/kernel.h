@@ -1,0 +1,1 @@
+void console_print(const char * str);

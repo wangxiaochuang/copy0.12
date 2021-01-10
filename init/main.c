@@ -1,4 +1,11 @@
+#include <linux/sched.h>
+
+#include <linux/kernel.h>
+
 #define EXT_MEM_K (*(unsigned short *)0x90002)
+
+extern void mem_init(long start, long end);
+extern void con_init(void);
 
 static long memory_end = 0;             /* 机器所具有的物理内存容量 */
 static long buffer_memory_end = 0;      /* 高速缓冲区末端地址 */
@@ -22,6 +29,10 @@ void main(void) {
     main_memory_start = buffer_memory_end;
     
     mem_init(main_memory_start, memory_end);
-
-    while(1){};
+    trap_init();
+    con_init();
+    console_print("this is a test");
+    while(1){
+        __asm__ ("hlt"::);
+    };
 }

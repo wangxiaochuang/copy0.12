@@ -121,6 +121,9 @@ setup_paging:
         subl $0x1000, %eax
         jge 1b
     cld
+    xorl %eax, %eax
+    movl %eax, %cr3
+    // enable paging
     movl %cr0, %eax
     orl $0x80000000, %eax
     movl %eax, %cr0

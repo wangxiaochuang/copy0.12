@@ -9,7 +9,8 @@ OBJECTS = $(S_OBJECTS) $(C_OBJECTS)
 VHD = ../myos.vhd
 
 CC = gcc
-C_FLAGS = -c -m32 -O0 -fno-asynchronous-unwind-tables -ffreestanding -mpreferred-stack-boundary=2  -I include
+#C_FLAGS = -c -m32 -O0 -fno-asynchronous-unwind-tables -ffreestanding -mpreferred-stack-boundary=2  -I include
+C_FLAGS = -c -Wall -m32 -ggdb -gstabs+ -nostdinc -fno-pic -fno-builtin -fno-stack-protector  -I include
 LD = ld
 LD_FLAGS = -N -Ttext 0x0 --oformat binary -nostdlib
 

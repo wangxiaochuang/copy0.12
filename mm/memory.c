@@ -17,9 +17,9 @@ void mem_init(long start_mem, long end_mem) {
     
     i = MAP_NR(start_mem);
     /* number of main memory */
-    end_mem -= start_mem
-    end_mem >>= 12
+    end_mem -= start_mem;
+    end_mem >>= 12;
     while (end_mem-- > 0) {
-        mem_map[i++] = 0
+        mem_map[i++] = 0;
     }
 }
