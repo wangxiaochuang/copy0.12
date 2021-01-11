@@ -38,7 +38,8 @@ static void time_init(void) {
 	BCD_TO_BIN(time.tm_mon);
 	BCD_TO_BIN(time.tm_year);
     time.tm_mon--;
-    startup_time = kernel_mktime(&time);
+    unsigned long tmp = kernel_mktime(&time);
+    startup_time = tmp;
 }
 
 void main(void) {
@@ -62,7 +63,7 @@ void main(void) {
     trap_init();
     con_init();
     time_init();
-    printk("\nstart time: %dl\n", startup_time);
+    printk("\nstart time: %u\n", startup_time);
     while(1){
         __asm__ ("hlt"::);
     };
