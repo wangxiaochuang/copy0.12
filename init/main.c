@@ -65,6 +65,7 @@ void main(void) {
     time_init();
     sched_init();
     printk("\nstart time: %u\n", startup_time);
+    // sti();
     while(1){
         __asm__ ("hlt"::);
     };

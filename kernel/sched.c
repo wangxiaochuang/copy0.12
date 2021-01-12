@@ -1,8 +1,12 @@
 #include <linux/sched.h>
 #include <asm/system.h>
+#include <asm/io.h>
+
 #include <signal.h>
 
 #define LATCH (1193180 / HZ)
+
+extern int timer_interrupt(void);
 
 union task_union {
     struct task_struct task;
@@ -11,9 +15,17 @@ union task_union {
 
 static union task_union init_task = {INIT_TASK, };
 
+unsigned long volatile jiffies = 0;
 unsigned long startup_time = 0;
 
+struct task_struct *current = &(init_task.task);
+
 struct task_struct *task[NR_TASKS] = {&(init_task.task), };
+
+extern int printk(const char * fmt, ...);
+void do_timer(long cpl) {
+    printk("A");
+}
 
 void sched_init(void) {
     int i;
@@ -40,4 +52,7 @@ void sched_init(void) {
     outb_p(0x36,0x43);				/* binary, mode 3, LSB/MSB, ch 0 */
 	outb_p(LATCH & 0xff , 0x40);	/* LSB */
 	outb(LATCH >> 8 , 0x40);		/* MSB */
+
+    set_intr_gate(0x20,&timer_interrupt);
+	outb(inb_p(0x21)&~0x01,0x21);
 }

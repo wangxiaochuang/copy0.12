@@ -73,10 +73,6 @@ end_move:
     lidt idt_48
     lgdt gdt_48
 
-    movl %cr0, %eax
-    or $1, %eax
-	movl %eax, %cr0
-
     // 8259A 重编程
     mov $0x11, %al
     out %al, $0x20
@@ -106,6 +102,9 @@ end_move:
     .word 0x00eb, 0x00eb
     out %al, $0xa1
 
+    movl %cr0, %eax
+    or $1, %eax
+	movl %eax, %cr0
     jmp $8, $0
     hlt
 
