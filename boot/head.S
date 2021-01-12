@@ -7,7 +7,7 @@ SETUPSEG = DEF_SETUPSEG
 stack_start = 0x700000
 
 .code32
-.globl idt, gdt
+.globl idt, gdt, pg_dir
 pg_dir:
 
 .globl startup_32

@@ -63,6 +63,7 @@ void main(void) {
     trap_init();
     con_init();
     time_init();
+    sched_init();
     printk("\nstart time: %u\n", startup_time);
     while(1){
         __asm__ ("hlt"::);
