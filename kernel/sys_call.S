@@ -40,8 +40,6 @@ ret_from_sys_call:
 
 .align 4
 timer_interrupt:
-	cli
-	hlt
 	push %ds		# save ds,es and put kernel data space
 	push %es		# into them. %fs is used by _system_call
 	push %fs
