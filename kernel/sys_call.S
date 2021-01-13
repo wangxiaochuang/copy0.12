@@ -1,11 +1,47 @@
 CS		= 0x24
 OLDSS		= 0x30
+
+state	= 0
+counter	= 4
 signal	= 12
 blocked = (33*16)
 
-.globl timer_interrupt
+ENOSYS = 38
+
+.globl system_call, timer_interrupt, sys_fork
 
 .align 4
+bad_sys_call:
+	pushl $-ENOSYS
+	jmp ret_from_sys_call
+.align 4
+reschedule:
+	pushl $ret_from_sys_call
+	jmp schedule
+.align 4
+system_call:
+	push %ds
+	push %es
+	push %fs
+	pushl %eax		# save the orig_eax
+	pushl %edx		
+	pushl %ecx		# push %ebx,%ecx,%edx as parameters
+	pushl %ebx		# to the system call
+	movl $0x10,%edx		# set up ds,es to kernel space
+	mov %dx,%ds
+	mov %dx,%es
+	movl $0x17,%edx		# fs points to local data space
+	mov %dx,%fs
+	cmpl NR_syscalls,%eax
+	jae bad_sys_call
+	call *sys_call_table(,%eax,4)
+	pushl %eax
+2:
+	movl current,%eax
+	cmpl $0,state(%eax)		# state
+	jne reschedule
+	cmpl $0,counter(%eax)		# counter
+	je reschedule
 ret_from_sys_call:
 	movl current,%eax
 	cmpl task,%eax			# task[0] cannot have signals
@@ -62,3 +98,17 @@ timer_interrupt:
 	call do_timer		# 'do_timer(long CPL)' does everything from
 	addl $4,%esp		# task switching to accounting ...
 	jmp ret_from_sys_call
+
+.align 4
+sys_fork:
+	call find_empty_process
+	testl %eax,%eax
+	js 1f
+	push %gs
+	pushl %esi
+	pushl %edi
+	pushl %ebp
+	pushl %eax
+	call copy_process
+	addl $20,%esp
+1:	ret

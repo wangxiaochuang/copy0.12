@@ -1,3 +1,8 @@
+#define __LIBRARY__
+#include <unistd.h>
+#include <errno.h>
+_syscall0(int, fork)
+
 #include <linux/sched.h>
 #include <linux/kernel.h>
 #include <time.h>
@@ -42,6 +47,12 @@ static void time_init(void) {
     startup_time = tmp;
 }
 
+void init(void) {
+    while (1) {
+        printk("A");
+    }
+}
+
 void main(void) {
     memory_end = (1 << 20) + (EXT_MEM_K << 10);
     memory_end &= 0xfffff000;
@@ -66,6 +77,10 @@ void main(void) {
     sched_init();
     printk("\nstart time: %u\n", startup_time);
     sti();
+    move_to_user_mode();
+    if (!fork()) {
+        init();
+    }
     while(1){
         __asm__ ("hlt"::);
     };
