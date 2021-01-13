@@ -3,7 +3,15 @@
 
 #define PAGE_SIZE 4096
 
+#include <linux/kernel.h>
+
 extern unsigned long get_free_page(void);
+extern void free_page(unsigned long addr);
+
+static inline void oom(void)
+{
+	printk("out of memory\n\r");
+}
 
 #define invalidate() __asm__("movl %%eax,%%cr3"::"a" (0))
 

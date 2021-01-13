@@ -4,8 +4,6 @@ INITSEG  = DEF_INITSEG
 SYSSEG   = DEF_SYSSEG
 SETUPSEG = DEF_SETUPSEG
 
-stack_start = 0x700000
-
 .code32
 .globl idt, gdt, pg_dir
 pg_dir:
@@ -17,8 +15,7 @@ startup_32:
     mov %eax, %es
     mov %eax, %fs
     mov %eax, %gs
-    mov %eax, %ss
-    mov $stack_start, %esp
+    lss stack_start, %esp
 
     call setup_idt
     lgdt gdt_descr
@@ -28,8 +25,7 @@ startup_32:
     mov %ax, %es
     mov %ax, %fs
     mov %ax, %gs
-    mov %ax, %ss
-    mov $stack_start, %esp
+    lss stack_start, %esp
 
     jmp after_page_tables
 

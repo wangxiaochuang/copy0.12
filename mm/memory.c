@@ -1,4 +1,6 @@
-#include <linux/mm.h>
+#include <linux/sched.h>
+
+extern void panic(const char * str);
 
 unsigned long HIGH_MEMORY = 0;
 
@@ -117,6 +119,64 @@ int copy_page_tables(unsigned long from, unsigned long to, long size) {
     }
 	invalidate();
 	return 0;
+}
+
+static unsigned long put_page(unsigned long page, unsigned long address)
+{
+	unsigned long tmp, *page_table;
+
+	/* NOTE !!! This uses the fact that _pg_dir=0 */
+	/* 注意!!! 这里使用了页目录表基地址pg_dir=0的条件 */
+
+	if (page < LOW_MEM || page >= HIGH_MEMORY)
+		printk("Trying to put page %p at %p\n", page, address);
+	/* page指向的页面未标记为已使用，故不能做映射 */
+	if (mem_map[(page - LOW_MEM) >> 12] != 1)
+		printk("mem_map disagrees with %p at %p\n", page, address);
+
+	/* 根据address从页目录表取出页表地址 */
+	page_table = (unsigned long *) ((address >> 20) & 0xffc);
+	if ((*page_table) & 1)	/* 页表存在 */
+		page_table = (unsigned long *) (0xfffff000 & *page_table);
+	else {
+		if (!(tmp = get_free_page()))
+			return 0;
+		*page_table = tmp | 7; 	/* 置位3个标志(U/S，W/R，P) */
+		page_table = (unsigned long *) tmp;
+	}
+	/* 在页表中设置页面地址，并置位3个标志(U/S，W/R，P) */
+	page_table[(address >> 12) & 0x3ff] = page | 7;
+
+	/* no need for invalidate */
+	return page;
+}
+
+void get_empty_page(unsigned long address)
+{
+	unsigned long tmp;
+
+	/* 若不能取得一空闲页面，或者不能将所取页面放置到指定地址处，则显示内存不够的信息 */
+	if (!(tmp = get_free_page()) || !put_page(tmp, address)) {
+		free_page(tmp);		/* 0 is ok - ignored */
+		oom();
+	}
+}
+
+void do_no_page(unsigned long error_code, unsigned long address) {
+	if (address < TASK_SIZE)
+		printk("\n\rBAD!! KERNEL PAGE MISSING\n\r");
+
+	if (address - current->start_code > TASK_SIZE) {
+		printk("Bad things happen: nonexistent page error in do_no_page\n\r");
+		// do_exit(SIGSEGV);
+	}
+	address &= 0xfffff000;
+	get_empty_page(address);
+	return;
+}
+
+void do_wp_page(unsigned long error_code, unsigned long address) {
+	printk("no implement write page");
 }
 
 /**

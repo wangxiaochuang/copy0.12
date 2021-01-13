@@ -62,8 +62,8 @@ ret_from_sys_call:
 	pushl %ecx
 	call do_signal
 	popl %ecx
-	#testl %eax, %eax
-	#jne 2b		# see if we need to switch tasks, or do more signals
+	// testl %eax, %eax
+	// jne 2b		# see if we need to switch tasks, or do more signals
 3:	popl %eax
 	popl %ebx
 	popl %ecx

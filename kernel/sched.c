@@ -21,6 +21,7 @@ unsigned long volatile jiffies = 0;
 unsigned long startup_time = 0;
 
 struct task_struct *current = &(init_task.task);
+struct task_struct *last_task_used_math = NULL;
 
 struct task_struct *task[NR_TASKS] = {&(init_task.task), };
 
@@ -32,14 +33,36 @@ struct {
 	} stack_start = { & user_stack [PAGE_SIZE>>2] , 0x10 };
 
 void schedule(void) {
-    int i, next, c;
+	int i, next, c;
 	struct task_struct ** p;
-    while (1) {
-        c = -1;
-        next = 0;
-        i = NR_TASKS;
-        p = &task[NR_TASKS];
-    }
+
+	while (1) {
+		c = -1;
+		next = 0;
+		i = NR_TASKS;
+		p = &task[NR_TASKS];
+		/* 找到就绪状态下时间片最大的任务，用next指向该任务 */
+		while (--i) {
+			if (!*--p) {
+				continue;
+			}
+			if ((*p)->state == TASK_RUNNING && (*p)->counter > c) {
+				c = (*p)->counter, next = i;
+			}
+		}
+		/* c = -1，没有可以运行的任务（此时next=0，会切去任务0）；c > 0，找到了可以切换的任务 */
+		if (c) {
+			break;
+		}
+		/* 除任务0以外，存在处于就绪状态但时间片都为0的任务，则更新counter值，然后重新寻找 */
+		for(p = &LAST_TASK ; p > &FIRST_TASK ; --p) {
+			if (*p) {
+				(*p)->counter = ((*p)->counter >> 1) + (*p)->priority;
+			}
+		}
+	}
+	printk("D");
+	switch_to(next);
 }
 
 extern int printk(const char * fmt, ...);
@@ -57,7 +80,7 @@ void do_timer(long cpl) {
     if (!cpl) {
         return;
     }
-    // schedule();
+    schedule();
 }
 
 void sched_init(void) {

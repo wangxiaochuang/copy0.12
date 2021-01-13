@@ -27,7 +27,11 @@
 #define NULL ((void *) 0)
 #endif
 
+extern int copy_page_tables(unsigned long from, unsigned long to, long size);
+extern int free_page_tables(unsigned long from, unsigned long size);
+
 extern void sched_init(void);
+extern void schedule(void);
 extern void trap_init(void);
 
 extern void panic(const char * str);
@@ -172,6 +176,7 @@ struct task_struct {
 }
 
 extern struct task_struct *task[NR_TASKS];
+extern struct task_struct *last_task_used_math;
 extern struct task_struct *current;
 extern unsigned long volatile jiffies;
 extern unsigned long startup_time;
@@ -184,6 +189,21 @@ extern unsigned long startup_time;
 
 #define ltr(n) __asm__("ltr %%ax"::"a" (_TSS(n)))
 #define lldt(n) __asm__("lldt %%ax"::"a" (_LDT(n)))
+
+#define switch_to(n) {							\
+struct {long a,b;} __tmp; 						\
+__asm__("cmpl %%ecx,current\n\t"			 	\
+	"je 1f\n\t" 								\
+	"movw %%dx,%1\n\t" 							\
+	"xchgl %%ecx,current\n\t" 					\
+	"ljmp *%0\n\t" 								\
+	"cmpl %%ecx,last_task_used_math\n\t" 		\
+	"jne 1f\n\t" 								\
+	"clts\n"									\
+	"1:" 										\
+	::"m" (*&__tmp.a),"m" (*&__tmp.b), 			\
+	"d" (_TSS(n)),"c" ((long) task[n])); 		\
+}
 
 /* 设置位于地址addr处描述符中的各基地址字段 */
 #define _set_base(addr,base) 		\

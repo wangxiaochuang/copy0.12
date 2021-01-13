@@ -2,6 +2,7 @@
 
 #include <linux/sched.h>
 #include <linux/kernel.h>
+#include <asm/system.h>
 
 static long last_pid = 0;
 
