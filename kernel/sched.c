@@ -61,8 +61,8 @@ void schedule(void) {
 			}
 		}
 	}
-	printk("D");
 	switch_to(next);
+	panic("stop here");
 }
 
 extern int printk(const char * fmt, ...);
@@ -109,8 +109,8 @@ void sched_init(void) {
 	outb_p(LATCH & 0xff, 0x40);	/* LSB */
 	outb(LATCH >> 8, 0x40);		/* MSB */
 
-    set_intr_gate(0x20, &timer_interrupt);
-	outb(inb_p(0x21)&~0x01, 0x21);
+    // set_intr_gate(0x20, &timer_interrupt);
+	// outb(inb_p(0x21)&~0x01, 0x21);
 
     set_system_gate(0x80, &system_call);
 }

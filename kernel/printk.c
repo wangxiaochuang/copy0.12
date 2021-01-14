@@ -3,7 +3,7 @@
 
 #include <linux/kernel.h>
 
-static char buf[1024];
+static char buf[256];
 
 extern int vsprintf(char * buf, const char * fmt, va_list args);
 

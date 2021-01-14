@@ -34,7 +34,7 @@ extern void sched_init(void);
 extern void schedule(void);
 extern void trap_init(void);
 
-extern void panic(const char * str);
+extern void panic(const char *fmt, ...);
 
 typedef int (*fn_ptr)();
 

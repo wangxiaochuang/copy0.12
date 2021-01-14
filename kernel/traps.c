@@ -1,4 +1,5 @@
 #include <linux/head.h>
+#include <linux/sched.h>
 #include <asm/system.h>
 #include <asm/io.h>
 
@@ -52,6 +53,8 @@ void alignment_check(void);					// int46(kernel/asm.s)
 static void die(char * str, long esp_ptr, long nr)
 {
 	// long * esp = (long *) esp_ptr;
+	printk("base: %p, limit: %p\n", get_base(current->ldt[1]), get_limit(0x17));
+	panic("die: %s\n\r", str);
 }
 
 /* 以下以do_开头的函数是asm.s中对应中断处理程序调用的C函数 */

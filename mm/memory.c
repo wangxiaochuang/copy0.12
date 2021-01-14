@@ -1,8 +1,10 @@
 #include <linux/sched.h>
 
-extern void panic(const char * str);
+extern void panic(const char *fmt, ...);
 
 unsigned long HIGH_MEMORY = 0;
+
+#define copy_page(from, to) 	__asm__("cld ; rep ; movsl"::"S" (from),"D" (to),"c" (1024))
 
 /* 15M / 4k from 1M begin */
 unsigned char mem_map [ PAGING_PAGES ] = {0, };
@@ -175,8 +177,38 @@ void do_no_page(unsigned long error_code, unsigned long address) {
 	return;
 }
 
+void un_wp_page(unsigned long * table_entry) {
+	unsigned long old_page, new_page;
+
+	old_page = 0xfffff000 & *table_entry;
+
+	/* 即如果该内存页面此时只被一个进程使用，就直接把属性改为可写即可 */
+	if (old_page >= LOW_MEM && mem_map[MAP_NR(old_page)] == 1) {
+		*table_entry |= 2;
+		invalidate();
+		return;
+	}
+	if (!(new_page = get_free_page()))
+		oom();							/* 内存不够处理 */
+	if (old_page >= LOW_MEM)
+		mem_map[MAP_NR(old_page)]--;
+	copy_page(old_page, new_page);
+	// panic("do_wp_page: 0x%08x\n", address);
+	*table_entry = new_page | 7;
+	invalidate();
+}
+
 void do_wp_page(unsigned long error_code, unsigned long address) {
-	printk("no implement write page");
+	if (address < TASK_SIZE)
+		printk("\n\rBAD! KERNEL MEMORY WP-ERR!\n\r");
+	if (address - current->start_code > TASK_SIZE) {
+		printk("Bad things happen: page error in do_wp_page\n\r");
+		// do_exit(SIGSEGV);
+		panic("error in do_wp_page");
+	}
+	un_wp_page((unsigned long *)
+		(((address >> 10) & 0xffc) + (0xfffff000 &
+		*((unsigned long *) ((address >> 20) & 0xffc)))));
 }
 
 /**

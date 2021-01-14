@@ -8,9 +8,9 @@
 extern unsigned long get_free_page(void);
 extern void free_page(unsigned long addr);
 
-static inline void oom(void)
-{
+static inline void oom(void) {
 	printk("out of memory\n\r");
+	while(1) { printk("out of memory"); };
 }
 
 #define invalidate() __asm__("movl %%eax,%%cr3"::"a" (0))

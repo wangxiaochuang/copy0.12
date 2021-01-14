@@ -77,6 +77,7 @@ void main(void) {
     sched_init();
     printk("\nstart time: %u\n", startup_time);
     sti();
+
     move_to_user_mode();
     if (!fork()) {
         init();

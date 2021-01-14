@@ -31,6 +31,10 @@ static int copy_mem(int nr, struct task_struct * p) {
     return 0;
 }
 
+static void * memcpy(void *dest, const void *src, int n) {
+return dest;
+}
+
 int copy_process(int nr, long ebp, long edi, long esi, long gs, long none,
         long ebx, long ecx, long edx, long orig_eax, 
         long fs, long es, long ds,
@@ -44,7 +48,15 @@ int copy_process(int nr, long ebp, long edi, long esi, long gs, long none,
         return -EAGAIN;
     }
     task[nr] = p;
-    *p = *current;	    /* NOTE! this doesn't copy the supervisor stack */
+    // *p = *current;	    /* NOTE! this doesn't copy the supervisor stack */
+    __asm__("cld\n\t"
+	"rep\n\t"
+	"movsb"
+	::"c" (sizeof(struct task_struct)),"S" (current),"D" (p)
+	);
+
+    // printk("pid: %d, counter: %d, priority: %d, sizeof: %d\n", (*current).pid, (*current).counter, (*current).priority, sizeof(*current));
+    // printk("pid: %d, counter: %d, priority: %d, sizeof: %d", p->pid, p->counter, p->priority, sizeof(*p));
 
     /* 对复制来的进程结构内容进行一些修改。先将新进程的状态置为不可中断等待状态，以防止内核调度其执行 */
     p->state = TASK_UNINTERRUPTIBLE;
