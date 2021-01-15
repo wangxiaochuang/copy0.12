@@ -62,7 +62,12 @@ void schedule(void) {
 		}
 	}
 	switch_to(next);
-	panic("stop here");
+}
+int sys_pause(void)
+{
+	current->state = TASK_INTERRUPTIBLE;
+	schedule();
+	return 0;
 }
 
 extern int printk(const char * fmt, ...);

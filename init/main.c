@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <errno.h>
 _syscall0(int, fork)
+_syscall0(int, pause)
 
 #include <linux/sched.h>
 #include <linux/kernel.h>
@@ -9,13 +10,17 @@ _syscall0(int, fork)
 
 #include <asm/system.h>
 #include <asm/io.h>
+#include <stddef.h>
+#include <stdarg.h>
 
-#define EXT_MEM_K (*(unsigned short *)0x90002)
+static char printbuf[64] = {'Z',};
 
+extern int vsprintf(char * buf, const char * fmt, va_list args);
 extern void mem_init(long start, long end);
 extern void con_init(void);
 extern long kernel_mktime(struct tm * tm);
-extern unsigned long startup_time;
+
+#define EXT_MEM_K (*(unsigned short *)0x90002)
 
 static long memory_end = 0;             /* 机器所具有的物理内存容量 */
 static long buffer_memory_end = 0;      /* 高速缓冲区末端地址 */
@@ -46,10 +51,22 @@ static void time_init(void) {
     unsigned long tmp = kernel_mktime(&time);
     startup_time = tmp;
 }
+int printf(const char *fmt, ...)
+{
+	va_list args;
+	int i;
 
+	va_start(args, fmt);
+    i = vsprintf(printbuf, fmt, args);
+	write(1, printbuf, i);
+	va_end(args);
+	return i;
+}
 void init(void) {
+        printbuf[0] = 'A';
+    printf("1234");
     while (1) {
-        printk("A");
+        printf("1234");
     }
 }
 
@@ -83,6 +100,6 @@ void main(void) {
         init();
     }
     while(1){
-        __asm__ ("hlt"::);
+        __asm__("int $0x80"::"a" (__NR_pause));
     };
 }

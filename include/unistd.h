@@ -5,6 +5,8 @@
 #define NULL    ((void *)0)     /* 定义空指针 */
 #endif
 
+#include <sys/stat.h>
+
 #ifdef __LIBRARY__
 #define __NR_setup			 0	/* used only by init, to get system going */ 
 								/* __NR_setup仅用于初始化，以启动系统 */
@@ -95,6 +97,16 @@
 #define __NR_readlink		85
 #define __NR_uselib			86
 
+/**
+ * INT指令执行，硬件自动在内核栈压入：
+ * 	int 源SS
+ * 		源SP
+ * 		EFLAGS
+ * 		源CS
+ * 		源EIP
+ * iret ->
+ * /
+
 /* 不带参数的系统调用函数	type_name(void) */
 #define _syscall0(type, name) 						\
 type name(void)		 								\
@@ -152,6 +164,9 @@ type name(atype a, btype b, ctype c) 				\
 	return -1; 										\
 }
 
-#endif
+#endif /* __LIBRARY__ */
+
+extern int errno;
+int write(int fildes, const char * buf, off_t count);
 
 #endif
