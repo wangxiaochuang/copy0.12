@@ -165,6 +165,10 @@ void get_empty_page(unsigned long address)
 }
 
 void do_no_page(unsigned long error_code, unsigned long address) {
+	unsigned long tmp;
+	unsigned long page;
+	struct m_inode * inode;
+	
 	if (address < TASK_SIZE)
 		printk("\n\rBAD!! KERNEL PAGE MISSING\n\r");
 
@@ -172,8 +176,23 @@ void do_no_page(unsigned long error_code, unsigned long address) {
 		printk("Bad things happen: nonexistent page error in do_no_page\n\r");
 		// do_exit(SIGSEGV);
 	}
+	page = *(unsigned long *) ((address >> 20) & 0xffc);
+	if (page & 1) {
+		page &= 0xfffff000;
+		page += (address >> 10) & 0xffc;
+		tmp = *(unsigned long *) page;
+		if (tmp && !(1 & tmp)) {
+			printk(".... 0x%08x\n\r", address);
+			panic("in memory.....");
+		}
+	}
 	address &= 0xfffff000;
-	get_empty_page(address);
+	tmp = address - current->start_code;
+	inode = current->executable;
+	if (!inode) {
+		get_empty_page(address);
+		return;
+	}
 	return;
 }
 

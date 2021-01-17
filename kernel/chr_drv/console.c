@@ -3,6 +3,7 @@
 
 #include <asm/io.h>
 #include <asm/system.h>
+#include <asm/segment.h>
 
 #define ORIG_X			(*(unsigned char *)0x90000)
 #define ORIG_Y			(*(unsigned char *)0x90001)
@@ -204,7 +205,7 @@ void console_print(const char *b) {
     int currcons = fg_console;
     char c;
 
-    while ((c = *(b++))) {
+    while ((c = (char) get_fs_byte(b++))) {
         if (c == 10) {
             cr(currcons);
             lf(currcons);

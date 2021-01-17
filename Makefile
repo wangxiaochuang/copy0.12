@@ -10,7 +10,7 @@ VHD = ../myos.vhd
 
 CC = gcc
 #C_FLAGS = -c -m32 -O0 -fno-asynchronous-unwind-tables -ffreestanding -mpreferred-stack-boundary=2  -I include
-C_FLAGS = -c -m32 -ggdb -gstabs+ -nostdinc -fno-pic -fno-builtin -fno-stack-protector  -I include
+C_FLAGS = -c -m32 -lasan -ggdb -gstabs+ -nostdinc -fno-pic -fno-builtin -fno-stack-protector  -I include
 LD = ld
 LD_FLAGS = -N -Ttext 0x0 --oformat binary -nostdlib
 
@@ -40,7 +40,7 @@ system.bin: $(OBJECTS)
 
 .PHONY: bochs
 bochs:
-	@bochs -qf debug/bochs.cnf
+	@/Users/wxc/software/share/bochs-2.6.9/bochs -qf debug/bochs.cnf
 .PHONY: clean
 clean:
 	rm -rf system.bin ./boot/bootsect.bin ./boot/setup.bin $(OBJECTS) boot/*.o

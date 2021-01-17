@@ -31,10 +31,6 @@ static int copy_mem(int nr, struct task_struct * p) {
     return 0;
 }
 
-static void * memcpy(void *dest, const void *src, int n) {
-return dest;
-}
-
 int copy_process(int nr, long ebp, long edi, long esi, long gs, long none,
         long ebx, long ecx, long edx, long orig_eax, 
         long fs, long es, long ds,

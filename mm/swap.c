@@ -24,5 +24,8 @@ repeat:
     // if (!__res && swap_out()) {	/* 没有得到空闲页面则执行交换处理,并重新查找 */
         // goto repeat;
     // }
+    if (!__res) {
+        goto repeat;
+    }
     return __res;
 }

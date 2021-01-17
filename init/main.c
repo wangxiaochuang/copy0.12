@@ -1,8 +1,8 @@
 #define __LIBRARY__
 #include <unistd.h>
 #include <errno.h>
-_syscall0(int, fork)
-_syscall0(int, pause)
+static inline _syscall0(int, fork)
+static inline _syscall0(int, pause)
 
 #include <linux/sched.h>
 #include <linux/kernel.h>
@@ -30,7 +30,9 @@ static long main_memory_start = 0;      /* 主内存开始位置 */
 	outb_p(0x80 | addr, 0x70);	\
 	inb_p(0x71); 				\
 })
+
 #define BCD_TO_BIN(val)	((val)=((val)&15) + ((val)>>4)*10)
+
 static void time_init(void) {
     struct tm time;
     do {
@@ -51,7 +53,7 @@ static void time_init(void) {
     unsigned long tmp = kernel_mktime(&time);
     startup_time = tmp;
 }
-int printf(const char *fmt, ...)
+static void printf(const char *fmt, ...)
 {
 	va_list args;
 	int i;
@@ -60,14 +62,12 @@ int printf(const char *fmt, ...)
     i = vsprintf(printbuf, fmt, args);
 	write(1, printbuf, i);
 	va_end(args);
-	return i;
 }
 void init(void) {
-        printbuf[0] = 'A';
-    printf("1234");
-    while (1) {
-        printf("1234");
+    if (!fork()) {
+        for (;;) printf("A");
     }
+    for (;;) printf("B");
 }
 
 void main(void) {
@@ -93,6 +93,7 @@ void main(void) {
     time_init();
     sched_init();
     printk("\nstart time: %u\n", startup_time);
+    printk("kernel %s\n\r", printbuf);
     sti();
 
     move_to_user_mode();
