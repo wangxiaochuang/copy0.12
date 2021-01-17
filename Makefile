@@ -40,7 +40,7 @@ system.bin: $(OBJECTS)
 
 .PHONY: bochs
 bochs:
-	@/Users/wxc/software/share/bochs-2.6.9/bochs -qf debug/bochs.cnf
+	@bochs -qf debug/bochs.cnf
 .PHONY: clean
 clean:
 	rm -rf system.bin ./boot/bootsect.bin ./boot/setup.bin $(OBJECTS) boot/*.o
