@@ -53,6 +53,7 @@ void alignment_check(void);					// int46(kernel/asm.s)
 static void die(char * str, long esp_ptr, long nr)
 {
 	// long * esp = (long *) esp_ptr;
+	printk("%s: %04x\n\r",str,nr&0xffff);
 	printk("base: %p, limit: %p\n", get_base(current->ldt[1]), get_limit(0x17));
 	panic("die: %s\n\r", str);
 }

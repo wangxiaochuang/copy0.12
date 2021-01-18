@@ -22,6 +22,9 @@ entry:
 // 0x9000C	; 2	;	显示卡特性参数		 ;
 // 0x9000E	; 1	;	屏幕当前行值		 ;
 // 0x9000F	; 1	;	屏幕当前列值		 ;
+// 0x90080	; 16;	第一硬盘参数表 		 ;
+// 0x90090	; 16;	第二硬盘参数表 		 ;
+// 0x901FC	; 2 ;	根设备号    		;
 
     # 取从0x100000（1M）处开始的扩展内存大小（KB）
     mov $0x88, %ah
@@ -51,6 +54,40 @@ novga:
     int $0x10
     mov %bx, 4
     mov %ax, 6
+
+# 复制第一块硬盘的参数表
+    mov $0x0000, %ax
+    mov %ax, %ds
+    lds 4*0x41, %si
+    mov $INITSEG, %ax
+    mov %ax, %es
+    mov $0x0080, %di
+    mov $0x10, %cx
+    rep movsb
+# 复制第两块硬盘的参数表
+    mov $0x0000, %ax
+    mov %ax, %ds
+    lds 4*0x46, %si
+    mov $INITSEG, %ax
+    mov %ax, %es
+    mov $0x0090, %di
+    mov $0x10, %cx
+    rep movsb
+# 检测第二块硬盘是否存在，不存在就清理
+    mov $0x01500, %ax
+    mov $0x81, %dl
+    int $0x13
+    jc no_disk1
+    cmp $3, %ah
+    je is_disk1
+no_disk1:
+    mov $INITSEG, %ax
+    mov %ax, %es
+    mov $0x0090, %di
+    mov $0x10, %cx
+    mov $0x00, %ax
+    rep stosb
+is_disk1:
 
     cli
     # protect mode

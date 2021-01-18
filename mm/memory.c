@@ -110,7 +110,11 @@ int copy_page_tables(unsigned long from, unsigned long to, long size) {
 			}
 			this_page &= ~2;	/* 让页表项对应的内存页面只读 */
 			*to_page_table = this_page;
-			/* 物理页面的地址在1MB以上，则需在mem_map[]中增加对应页面的引用次数 */
+			/*
+			 * 物理页面的地址在1MB以上，则需在mem_map[]中增加对应页面的引用次数
+			 * 如果是内核区的代码及数据段，其读写标志不变，还是可读写，新页面设置为只读
+			 * 新进程的mem_map标志也只是1，写保护异常函数里会直接改成可写
+			 **/
 			if (this_page > LOW_MEM) {
 				*from_page_table = this_page;	/* 令源页表项也只读 */
 				this_page -= LOW_MEM;

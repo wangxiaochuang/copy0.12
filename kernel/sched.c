@@ -70,6 +70,52 @@ int sys_pause(void)
 	return 0;
 }
 
+static inline void __sleep_on(struct task_struct **p, int state) {
+	struct task_struct *tmp;
+
+	if (!p) {
+		return;
+	}
+	if (current == &(init_task.task)) {
+		panic("task[0] trying to sleep");
+	}
+	tmp = *p;
+	*p = current;
+	current->state = state;
+repeat:	schedule();
+	if (*p && *p != current) {
+		(**p).state = TASK_RUNNING;
+		current->state = TASK_UNINTERRUPTIBLE;
+		goto repeat;
+	}
+	if (!*p) {
+		printk("Warning: *P = NULL\n\r");
+	}
+	if ((*p = tmp)) {
+		tmp->state = 0;
+	}
+}
+
+void interruptible_sleep_on(struct task_struct **p) {
+	__sleep_on(p, TASK_INTERRUPTIBLE);
+}
+
+void sleep_on(struct task_struct **p) {
+	__sleep_on(p, TASK_UNINTERRUPTIBLE);
+}
+
+void wake_up(struct task_struct **p) {
+	if (p && *p) {
+		if ((**p).state == TASK_STOPPED) {
+			printk("wake_up: TASK_STOPPED");
+		}
+		if ((**p).state == TASK_ZOMBIE) {
+			printk("wake_up: TASK_ZOMBIE");
+		}
+		(**p).state = TASK_RUNNING;
+	}
+}
+
 extern int printk(const char * fmt, ...);
 
 void do_timer(long cpl) {

@@ -3,7 +3,49 @@
 
 #include <sys/types.h>
 
+#define READ 	0
+#define WRITE 	1
+#define READA 	2
+#define WRITEA 	3
+
+void buffer_init(long buffer_end);
+
+#define MAJOR(a) (((unsigned)(a)) >> 8)		/* 取高字节(主设备号) */
+#define MINOR(a) ((a) & 0xff)				/* 取低字节(次设备号) */
+
 #define NR_OPEN 		20
+#define NR_HASH 		307
+#define NR_BUFFERS 		nr_buffers
+#define BLOCK_SIZE 		1024
+#define BLOCK_SIZE_BITS 10
+#ifndef NULL
+	#define NULL ((void *) 0)
+#endif
+
+/* 缓冲块头数据结构(重要) */
+struct buffer_head {
+	char * b_data;						/* pointer to data block (1024 bytes) */	
+										/* 数据指针 */
+	unsigned long b_blocknr;			/* block number */
+										/* 块号 */
+	unsigned short b_dev;				/* device (0 = free) */
+										/* 数据源的设备号 */
+	unsigned char b_uptodate;       	/* 更新标志：表示数据是否已更新 */
+
+	unsigned char b_dirt;				/* 0-clean, 1-dirty */	
+										/* 修改标志：0未修改，1已修改 */
+	unsigned char b_count;				/* users using this block */
+										/* 使用用户数 */
+	unsigned char b_lock;				/* 0 - ok, 1 -locked */	
+										/* 缓冲区是否被锁定 */
+	struct task_struct * b_wait;		/* 指向等待该缓冲区解锁的任务 */
+
+	/* 这四个指针用于缓冲区的管理 */
+	struct buffer_head * b_prev;		/* hash队列上的前一块 */
+	struct buffer_head * b_next;		/* hash队列上的后一块 */
+	struct buffer_head * b_prev_free;	/* 空闲表上的前一块 */
+	struct buffer_head * b_next_free;	/* 空闲表上的后一块 */
+};
 
 /* 磁盘上的索引节点(i节点)数据结构 */
 struct d_inode {
@@ -50,5 +92,11 @@ struct file {
 	struct m_inode *f_inode;			/* 指向对应i节点 */
 	off_t f_pos;						/* 文件位置(读写偏移值) */
 };
+
+extern int nr_buffers;
+
+extern void ll_rw_block(int rw, struct buffer_head * bh);
+
+extern struct buffer_head * bread(int dev, int block);
 
 #endif

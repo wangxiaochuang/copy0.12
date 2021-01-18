@@ -181,6 +181,10 @@ extern struct task_struct *current;
 extern unsigned long volatile jiffies;
 extern unsigned long startup_time;
 
+extern void sleep_on(struct task_struct ** p);
+extern void interruptible_sleep_on(struct task_struct ** p);
+extern void wake_up(struct task_struct ** p);
+
 #define FIRST_TSS_ENTRY 4
 #define FIRST_LDT_ENTRY (FIRST_TSS_ENTRY+1)
 

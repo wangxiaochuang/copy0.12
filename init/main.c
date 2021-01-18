@@ -3,6 +3,7 @@
 #include <errno.h>
 static inline _syscall0(int, fork)
 static inline _syscall0(int, pause)
+static inline _syscall1(int, setup, void *, BIOS)
 
 #include <linux/sched.h>
 #include <linux/kernel.h>
@@ -13,14 +14,21 @@ static inline _syscall0(int, pause)
 #include <stddef.h>
 #include <stdarg.h>
 
+#include <linux/fs.h>
+
 static char printbuf[64] = {'Z',};
 
 extern int vsprintf(char * buf, const char * fmt, va_list args);
+void init(void);
+extern void blk_dev_init(void);
+extern void chr_dev_init(void);
+extern void hd_init(void);
 extern void mem_init(long start, long end);
 extern void con_init(void);
 extern long kernel_mktime(struct tm * tm);
 
 #define EXT_MEM_K (*(unsigned short *)0x90002)
+#define DRIVE_INFO (*(struct drive_info *)0x90080)
 
 static long memory_end = 0;             /* 机器所具有的物理内存容量 */
 static long buffer_memory_end = 0;      /* 高速缓冲区末端地址 */
@@ -63,14 +71,11 @@ static void printf(const char *fmt, ...)
 	write(1, printbuf, i);
 	va_end(args);
 }
-void init(void) {
-    if (!fork()) {
-        for (;;) printf("A");
-    }
-    for (;;) printf("B");
-}
+
+struct drive_info { char dummy[32]; } drive_info;
 
 void main(void) {
+    drive_info = DRIVE_INFO;
     memory_end = (1 << 20) + (EXT_MEM_K << 10);
     memory_end &= 0xfffff000;
     if (memory_end > 16 * 1024 * 1024) {
@@ -89,11 +94,14 @@ void main(void) {
     
     mem_init(main_memory_start, memory_end);
     trap_init();
+    blk_dev_init();
+    chr_dev_init();
     con_init();
     time_init();
     sched_init();
+    buffer_init(buffer_memory_end);
+    hd_init();
     printk("\nstart time: %u\n", startup_time);
-    printk("kernel %s\n\r", printbuf);
     sti();
 
     move_to_user_mode();
@@ -103,4 +111,9 @@ void main(void) {
     while(1){
         __asm__("int $0x80"::"a" (__NR_pause));
     };
+}
+
+void init(void) {
+    setup((void *) &drive_info);
+    for (;;) ;
 }
