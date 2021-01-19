@@ -51,7 +51,8 @@ int sys_setup(void * BIOS) {
     static int callable = 1;
     int i, drive;
     unsigned char cmos_disks;
-    struct buffer_head * bh;
+	struct partition *p;
+    struct buffer_head *bh;
     if (!callable)
         return -1;
     callable = 0;
@@ -91,7 +92,13 @@ int sys_setup(void * BIOS) {
         if (!(bh = bread(0x300 + drive * 5, 0))) {
             panic("Unable to read partition table of drive %d\n\r");
         }
-        panic("...............: 0x%02x", bh->b_data[510]);
+		p = 0x1BE + (void *)bh->b_data;
+		for (i = 1; i < 5; i++, p++) {
+			hd[i+5*drive].start_sect = p->start_sect;
+			hd[i+5*drive].nr_sects = p->nr_sects;
+		}
+		brelse(bh);
+		panic("");
     }
 }
 
