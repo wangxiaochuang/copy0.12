@@ -36,6 +36,16 @@ void schedule(void) {
 	int i, next, c;
 	struct task_struct ** p;
 
+	for (p = &LAST_TASK; p > &FIRST_TASK; --p)
+		if (*p) {
+			if ((*p)->timeout && (*p)->timeout < jiffies) {
+				(*p)->timeout = 0;
+				if ((*p)->state == TASK_INTERRUPTIBLE) {
+					(*p)->state = TASK_RUNNING;
+				}
+			}
+		}
+
 	while (1) {
 		c = -1;
 		next = 0;
@@ -119,6 +129,11 @@ void wake_up(struct task_struct **p) {
 extern int printk(const char * fmt, ...);
 
 void do_timer(long cpl) {
+	if (hd_timeout) {
+		if (!--hd_timeout) {
+			hd_times_out();
+		}
+	}
     if (cpl) {
         current->utime++;
     } else {

@@ -27,10 +27,10 @@ static inline void lock_buffer(struct buffer_head * bh) {
 }
 
 static inline void unlock_buffer(struct buffer_head * bh) {
-	if (!bh->b_lock)				// 如果该缓冲区没有被锁定,则打印出错信息.
+	if (!bh->b_lock)
 		printk("ll_rw_block.c: buffer not locked\n\r");
-	bh->b_lock = 0;					// 清锁定标志.
-	wake_up(&bh->b_wait);			// 唤醒等待该缓冲区的任务.
+	bh->b_lock = 0;
+	wake_up(&bh->b_wait);
 }
 
 static void add_request(struct blk_dev_struct * dev, struct request * req) {
@@ -86,9 +86,8 @@ repeat:
 	else
 		req = request + ((NR_REQUEST * 2) / 3);
     while (--req >= request)
-        if (req->dev < 0) {
+        if (req->dev < 0)
             break;
-        }
     if (req < request) {
         if (rw_ahead) {
             unlock_buffer(bh);
