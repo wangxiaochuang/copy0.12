@@ -5,8 +5,14 @@
 
 #include <linux/kernel.h>
 
+extern int SWAP_DEV;
+
+#define read_swap_page(nr,buffer) ll_rw_page(READ,SWAP_DEV,(nr),(buffer));
+#define write_swap_page(nr,buffer) ll_rw_page(WRITE,SWAP_DEV,(nr),(buffer));
+
 extern unsigned long get_free_page(void);
 extern void free_page(unsigned long addr);
+extern void init_swapping(void);
 
 static inline void oom(void) {
 	printk("out of memory\n\r");

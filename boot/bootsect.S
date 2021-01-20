@@ -5,6 +5,10 @@ INITSEG  = DEF_INITSEG
 SYSSEG   = DEF_SYSSEG
 SETUPSEG = DEF_SETUPSEG
 
+# 都使用硬盘
+ROOT_DEV = 0x0300
+SWAP_DEV = 0x0301
+
 .code16
 entry:
     mov $BOOTSEG, %ax
@@ -43,7 +47,7 @@ go:
     mov $SYSSEG, %ax
     mov %ax, %ds
 
-    mov $110, %cx
+    mov $125, %cx
     mov $0x5, %eax
     mov $0, %ebx
     1:
@@ -147,6 +151,15 @@ msg1:
     .byte 13, 10
     .asciz "bootsect running..."
 
-LEN = (510 - (. - entry))
-.fill LEN, 1, 0
+.org 446
+    .byte 0, 0, 0, 0, 0, 0, 0, 0
+    .long 256, 2048
+
+.org 506
+swap_dev:
+    .word SWAP_DEV
+root_dev:
+    .word ROOT_DEV
+
+boot_flag:
 .word 0xaa55

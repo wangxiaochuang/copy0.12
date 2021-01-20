@@ -39,6 +39,8 @@ static struct hd_struct {
     long nr_sects;
 } hd[5 * MAX_HD] = {{0, 0},};
 
+static int hd_sizes[5*MAX_HD] = {0, };
+
 #define port_read(port,buf,nr) \
 __asm__("cld;rep;insw"::"d" (port),"D" (buf),"c" (nr))
 
@@ -46,6 +48,7 @@ __asm__("cld;rep;insw"::"d" (port),"D" (buf),"c" (nr))
 __asm__("cld;rep;outsw"::"d" (port),"S" (buf),"c" (nr))
 
 extern void hd_interrupt(void);
+extern void rd_load(void);
 
 int sys_setup(void * BIOS) {
     static int callable = 1;
@@ -92,14 +95,27 @@ int sys_setup(void * BIOS) {
         if (!(bh = bread(0x300 + drive * 5, 0))) {
             panic("Unable to read partition table of drive %d\n\r");
         }
+		if (bh->b_data[510] != 0x55 || (unsigned char)
+		    bh->b_data[511] != 0xAA) {
+			panic("Bad partition table on drive %d\n\r", drive);
+		}
 		p = 0x1BE + (void *)bh->b_data;
 		for (i = 1; i < 5; i++, p++) {
 			hd[i+5*drive].start_sect = p->start_sect;
 			hd[i+5*drive].nr_sects = p->nr_sects;
 		}
 		brelse(bh);
-		panic("");
     }
+	for (i = 0; i < 10; i++)
+		printk("start %d, num: %d\n\r", hd[i].start_sect, hd[i].nr_sects);
+	for (i = 0; i < 5 * MAX_HD; i++)
+		hd_sizes[i] = hd[i].nr_sects >> 1;
+	blk_size[MAJOR_NR] = hd_sizes;
+	if (NR_HD)
+		printk("Partition table%s ok.\n\r",(NR_HD > 1) ? "s" : "");
+	rd_load();
+	init_swapping();
+	mount_root();
 }
 
 static int controller_ready(void) {

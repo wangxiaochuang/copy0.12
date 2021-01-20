@@ -13,7 +13,13 @@ void buffer_init(long buffer_end);
 #define MAJOR(a) (((unsigned)(a)) >> 8)		/* 取高字节(主设备号) */
 #define MINOR(a) ((a) & 0xff)				/* 取低字节(次设备号) */
 
+#define NAME_LEN 		14
+#define ROOT_INO 		1
+
 #define NR_OPEN 		20
+#define NR_INODE 		64
+#define NR_FILE 		64
+#define NR_SUPER 		8
 #define NR_HASH 		307
 #define NR_BUFFERS 		nr_buffers
 #define BLOCK_SIZE 		1024
@@ -93,11 +99,60 @@ struct file {
 	off_t f_pos;						/* 文件位置(读写偏移值) */
 };
 
+/* 内存中的超级块结构 */
+struct super_block {
+	unsigned short s_ninodes;			/* 节点数 */
+	unsigned short s_nzones;			/* 逻辑块数 */
+	unsigned short s_imap_blocks;		/* i节点位图所占用的数据块数 */
+	unsigned short s_zmap_blocks;		/* 逻辑块位图所占用的数据块数 */
+	unsigned short s_firstdatazone;		/* 第一个数据逻辑块号 */
+	unsigned short s_log_zone_size;		/* log2(数据块数/逻辑块) */
+	unsigned long s_max_size;			/* 文件最大长度 */
+	unsigned short s_magic;				/* 文件系统魔数 */
+	/* These are only in memory */		/* 以下是内存中特有的 */
+	struct buffer_head * s_imap[8];		/* i节点位图缓冲块指针数组(占用8块，可表示64M) */
+	struct buffer_head * s_zmap[8];		/* 逻辑块位图缓冲块指针数组(占用8块) */
+	unsigned short s_dev;				/* 超级块所在设备号 */
+	struct m_inode * s_isup;			/* 被安装的文件系统根目录的i节点(isup-superi) */
+	struct m_inode * s_imount;			/* 被安装到的i节点 */
+	unsigned long s_time;				/* 修改时间 */
+	struct task_struct * s_wait;		/* 等待该超级块的进程 */
+	unsigned char s_lock;				/* 被锁定标志 */
+	unsigned char s_rd_only;			/* 只读标志 */
+	unsigned char s_dirt;				/* 已修改(脏)标志 */
+};
+
+/* 磁盘上的超级块结构 */
+struct d_super_block {
+	unsigned short s_ninodes;			/* 节点数 */
+	unsigned short s_nzones;			/* 逻辑块数 */
+	unsigned short s_imap_blocks;		/* i节点位图所占用的数据块数 */
+	unsigned short s_zmap_blocks;		/* 逻辑块位图所占用的数据块数 */
+	unsigned short s_firstdatazone;		/* 第一个数据逻辑块号 */
+	unsigned short s_log_zone_size;		/* log(数据块数/逻辑块) */
+	unsigned long s_max_size;			/* 文件最大长度 */
+	unsigned short s_magic;				/* 文件系统魔数 */
+};
+
+/* 文件目录项结构 */
+struct dir_entry {
+	unsigned short inode;				/* i节点号 */
+	char name[NAME_LEN];				/* 文件名，长度NAME_LEN=14 */
+};
+
+extern struct file file_table[NR_FILE];
 extern int nr_buffers;
 
 extern void ll_rw_block(int rw, struct buffer_head * bh);
+/* 读/写数据页面 */
+extern void ll_rw_page(int rw, int dev, int nr, char * buffer);
+
 extern void brelse(struct buffer_head * buf);
 
 extern struct buffer_head * bread(int dev, int block);
+
+extern int ROOT_DEV;
+
+extern void mount_root(void);
 
 #endif

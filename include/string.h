@@ -341,7 +341,6 @@ __asm__("testl %1,%1\n\t"
 return __res;
 }
 
-/*
 static inline void * memcpy(void * dest,const void * src, int n)
 {
 __asm__("cld\n\t"
@@ -350,14 +349,6 @@ __asm__("cld\n\t"
 	::"c" (n),"S" (src),"D" (dest)
 	);
 return dest;
-}
-*/
-extern inline void * memcpy(void * dest,const void * src, int n) {
-	__asm__("cld\n\t"					\
-		"rep\n\t"						\
-		"movsb"							\
-		::"c" (n),"S" (src),"D" (dest):);
-	return dest;
 }
 
 static inline void * memmove(void * dest,const void * src, int n)
@@ -409,7 +400,7 @@ __asm__("cld\n\t"
 return __res;
 }
 
-extern inline void * memset(void * s,char c,int count)
+static inline void * memset(void * s,char c,int count)
 {
 __asm__("cld\n\t"
 	"rep\n\t"

@@ -16,6 +16,8 @@ static inline _syscall1(int, setup, void *, BIOS)
 
 #include <linux/fs.h>
 
+// #define RAMDISK 2048
+
 static char printbuf[64] = {'Z',};
 
 extern int vsprintf(char * buf, const char * fmt, va_list args);
@@ -24,11 +26,14 @@ extern void blk_dev_init(void);
 extern void chr_dev_init(void);
 extern void hd_init(void);
 extern void mem_init(long start, long end);
+extern long rd_init(long mem_start, int length);
 extern void con_init(void);
 extern long kernel_mktime(struct tm * tm);
 
 #define EXT_MEM_K (*(unsigned short *)0x90002)
 #define DRIVE_INFO (*(struct drive_info *)0x90080)
+#define ORIG_ROOT_DEV (*(unsigned short *)0x901FC)		/* 根文件系统所在设备号 */
+#define ORIG_SWAP_DEV (*(unsigned short *)0x901FA)		/* 交换文件所在设备号 */
 
 static long memory_end = 0;             /* 机器所具有的物理内存容量 */
 static long buffer_memory_end = 0;      /* 高速缓冲区末端地址 */
@@ -75,6 +80,8 @@ static void printf(const char *fmt, ...)
 struct drive_info { char dummy[32]; } drive_info;
 
 void main(void) {
+    ROOT_DEV = ORIG_ROOT_DEV;
+    SWAP_DEV = ORIG_SWAP_DEV;
     drive_info = DRIVE_INFO;
     memory_end = (1 << 20) + (EXT_MEM_K << 10);
     memory_end &= 0xfffff000;
@@ -91,6 +98,9 @@ void main(void) {
     }
 
     main_memory_start = buffer_memory_end;
+#ifdef RAMDISK
+    main_memory_start += rd_init(main_memory_start, RAMDISK * 1024);
+#endif
     
     mem_init(main_memory_start, memory_end);
     trap_init();

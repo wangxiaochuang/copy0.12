@@ -30,8 +30,15 @@ struct blk_dev_struct {
 extern struct blk_dev_struct blk_dev[NR_BLK_DEV];
 extern struct task_struct * wait_for_request;
 
+extern int * blk_size[NR_BLK_DEV];
+
 #ifdef MAJOR_NR
 #if (MAJOR_NR == 1)
+	#define DEVICE_NAME "ramdisk"
+	#define DEVICE_REQUEST do_rd_request
+	#define DEVICE_NR(device) ((device) & 7)
+	#define DEVICE_ON(device) 
+	#define DEVICE_OFF(device)
 #elif (MAJOR_NR == 2)
 #elif (MAJOR_NR == 3)
     #define DEVICE_NAME "harddisk"
@@ -59,7 +66,7 @@ void (*DEVICE_INTR)(void) = NULL;
 #endif
 static void (DEVICE_REQUEST)(void);
 
-extern inline void unlock_buffer(struct buffer_head * bh) {
+static void unlock_buffer(struct buffer_head * bh) {
 	if (!bh->b_lock)
 		printk(DEVICE_NAME ": free buffer being unlocked\n");
 	bh->b_lock=0;
