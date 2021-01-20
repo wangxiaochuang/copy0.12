@@ -16,6 +16,10 @@ void buffer_init(long buffer_end);
 #define NAME_LEN 		14
 #define ROOT_INO 		1
 
+#define I_MAP_SLOTS 	8					/* i节点位图的块数 */
+#define Z_MAP_SLOTS 	8					/* 逻辑块(区段块)位图的块数 */
+#define SUPER_MAGIC 	0x137F		/* MINIX文件系统魔数 */
+
 #define NR_OPEN 		20
 #define NR_INODE 		64
 #define NR_FILE 		64
@@ -27,6 +31,9 @@ void buffer_init(long buffer_end);
 #ifndef NULL
 	#define NULL ((void *) 0)
 #endif
+
+/* 每个逻辑块可存放的i节点数 */
+#define INODES_PER_BLOCK ((BLOCK_SIZE) / (sizeof (struct d_inode)))
 
 /* 缓冲块头数据结构(重要) */
 struct buffer_head {
@@ -140,8 +147,16 @@ struct dir_entry {
 	char name[NAME_LEN];				/* 文件名，长度NAME_LEN=14 */
 };
 
+extern struct m_inode inode_table[NR_INODE];
 extern struct file file_table[NR_FILE];
+extern struct super_block super_block[NR_SUPER];
 extern int nr_buffers;
+
+/* 从设备读取指定节点号的一个i节点 */
+extern struct m_inode * iget(int dev, int nr);
+
+/* 从i节点表中获取一个空闲i节点项 */
+extern struct m_inode * get_empty_inode(void);
 
 extern void ll_rw_block(int rw, struct buffer_head * bh);
 /* 读/写数据页面 */
@@ -150,6 +165,9 @@ extern void ll_rw_page(int rw, int dev, int nr, char * buffer);
 extern void brelse(struct buffer_head * buf);
 
 extern struct buffer_head * bread(int dev, int block);
+
+/* 读取指定设备的超级块 */
+extern struct super_block * get_super(int dev);
 
 extern int ROOT_DEV;
 

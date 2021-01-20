@@ -77,21 +77,19 @@ void init_swapping(void) {
         return;
     }
     read_swap_page(0, swap_bitmap);
-    /*
     if (strncmp("SWAP-SPACE", swap_bitmap + 4086, 10)) {
         panic("Unable to find swap-space signature\n\r");
         free_page((long) swap_bitmap);
         swap_bitmap = NULL;
         return;
     }
-    */
     memset(swap_bitmap + 4086, 0, 10);
     for (i = 0; i < SWAP_BITS; i++) {
         if (i == 1) {
             i = swap_size;
         }
         if (bit(swap_bitmap, i)) {
-            panic("Bad swap-space bit-map\n\r");
+            panic("Bad swap-space bits: %d bit-map %d\n\r", swap_size, i);
             free_page((long) swap_bitmap);
             swap_bitmap = NULL;
             return;
@@ -99,8 +97,6 @@ void init_swapping(void) {
     }
     j = 0;
     for (i = 1; i < swap_size; i++) {
-        // 无交换分区，因此手动设置为可用, @todo
-        setbit(swap_bitmap, i);
         if (bit(swap_bitmap, i))
             j++;
     }
