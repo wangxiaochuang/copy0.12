@@ -180,10 +180,14 @@ extern struct task_struct *last_task_used_math;
 extern struct task_struct *current;
 extern unsigned long volatile jiffies;
 extern unsigned long startup_time;
+extern int jiffies_offset;
+
+#define CURRENT_TIME (startup_time+(jiffies+jiffies_offset)/HZ)
 
 extern void sleep_on(struct task_struct ** p);
 extern void interruptible_sleep_on(struct task_struct ** p);
 extern void wake_up(struct task_struct ** p);
+extern int in_group_p(gid_t grp);
 
 #define FIRST_TSS_ENTRY 4
 #define FIRST_LDT_ENTRY (FIRST_TSS_ENTRY+1)

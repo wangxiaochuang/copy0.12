@@ -8,11 +8,12 @@ static inline _syscall1(int, setup, void *, BIOS)
 #include <linux/sched.h>
 #include <linux/kernel.h>
 #include <time.h>
-
 #include <asm/system.h>
 #include <asm/io.h>
+
 #include <stddef.h>
 #include <stdarg.h>
+#include <fcntl.h>
 
 #include <linux/fs.h>
 
@@ -125,5 +126,5 @@ void main(void) {
 
 void init(void) {
     setup((void *) &drive_info);
-    for (;;) ;
+    (void) open("/dev/tty1", O_RDWR, 0);
 }

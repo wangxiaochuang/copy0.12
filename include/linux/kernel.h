@@ -5,3 +5,5 @@ int dumpmem(const void *address, int len);
 extern void hd_times_out(void);
 
 extern int hd_timeout;      /* 硬盘超时滴答值 */
+
+#define suser() (current->euid == 0)

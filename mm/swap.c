@@ -101,9 +101,9 @@ void init_swapping(void) {
             j++;
     }
     if (!j) {
-        panic("j is 0\n\r");
         free_page((long) swap_bitmap);
         swap_bitmap = NULL;
+        printk("has no more swap bit\n\r");
         return;
     }
     printk("Swap device ok: %d pages (%d bytes) swap-space\n\r", j, j*4096);

@@ -169,11 +169,19 @@ void mount_root(void) {
     current->root = mi;
 
     free = 0;
-    i = p->s_nzones + 1;
+    i = p->s_nzones;
+    while (--i >= 0) {
+        if (!set_bit(i & 8191, p->s_zmap[i>>13]->b_data)) {
+			free++;
+		}
+    }
+    printk("%d/%d free blocks\n\r", free, p->s_nzones);
+    free = 0;
+    i = p->s_ninodes + 1;
     while (--i >= 0) {
         if (!set_bit(i & 8191, p->s_imap[i>>13]->b_data)) {
             free++;
         }
     }
-    panic("%d/%d free inodes\n\r", free, p->s_ninodes);
+    printk("%d/%d free inodes\n\r", free, p->s_ninodes);
 }

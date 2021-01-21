@@ -35,8 +35,141 @@ static inline void unlock_inode(struct m_inode *inode) {
 	wake_up(&inode->i_wait);
 }
 
+void sync_inodes(void) {
+    int i;
+    struct m_inode *inode;
+    inode = 0 + inode_table;
+    for (i = 0; i < NR_INODE; i++, inode++) {
+        wait_on_inode(inode);
+        if (inode->i_dirt && !inode->i_pipe) {
+            write_inode(inode);
+        }
+    }
+}
+
+static int _bmap(struct m_inode * inode, int block, int create) {
+    struct buffer_head *bh;
+    int i;
+
+    if (block < 0) {
+        panic("_bmap: block < 0");
+    }
+    /* block >= 直接块数 + 间接块数 + 二次间接块数 */
+    if (block >= 7 + 512 + 512 * 512) {
+        panic("_bmap: block > big");
+    }
+    if (block < 7) {
+        if (create && !inode->i_zone[block]) {
+            /*
+            if ((inode->i_zone[block] = new_block(inode->i_dev))) {
+                inode->i_ctime = CURRENT_TIME;
+                inode->i_dirt = 1;
+            }
+            */
+        }
+        return inode->i_zone[block];
+    }
+    block -= 7;
+    if (block < 512) {
+        if (create && !inode->i_zone[7]) {
+            // @todo
+        }
+        if (!inode->i_zone[7]) {
+            return 0;
+        }
+        if (!(bh = bread(inode->i_dev, inode->i_zone[7]))) {
+            return 0;
+        }
+        i = ((unsigned short *) (bh->b_data))[block];
+        if (create && !i) {
+            // @todo
+        }
+        brelse(bh);
+        return 1;
+    }
+
+    block -= 512;
+    if (create && !inode->i_zone[8]) {
+        // @todo
+    }
+    if (!inode->i_zone[8]) {
+        return 0;
+    }
+    if (!(bh = bread(inode->i_dev, inode->i_zone[8]))) {
+        return 0;
+    }
+    i = ((unsigned short *) bh->b_data)[block >> 9];
+    if (create && !i) {
+        // @todo
+    }
+    brelse(bh);
+    if (!i) {
+        return 0;
+    }
+    /* 读取二次间接块的二级块 */
+    if (!(bh = bread(inode->i_dev, i))) {
+        return 0;
+    }
+    i = ((unsigned short *)bh->b_data)[block & 511];
+    if (create && !i) {
+        // @todo
+    }
+    brelse(bh);
+    return i;
+}
+
+int bmap(struct m_inode *inode, int block) {
+    return _bmap(inode, block, 0);
+}
+
 void iput(struct m_inode * inode) {
-    
+    if (!inode) {
+        return;
+    }
+    wait_on_inode(inode);
+    if (!inode->i_count) {
+        panic("iput: trying to free free inode");
+    }
+    if (inode->i_pipe) {
+        wake_up(&inode->i_wait);
+        wake_up(&inode->i_wait2);
+        if (--inode->i_count) {
+            return;
+        }
+        // 对于管道节点，inode->i_size存放着内存页地址
+        free_page(inode->i_size);
+        inode->i_count = 0;
+        inode->i_dirt = 0;
+        inode->i_pipe = 0;
+        return;
+    }
+    if (!inode->i_dev) {
+        inode->i_count--;
+        return;
+    }
+    /* 如果是块设备文件的i节点，则i_zone[0]中是设备号，则刷新该设备。并等待i节点解锁 */
+    if (S_ISBLK(inode->i_mode)) {
+        sync_dev(inode->i_zone[0]);
+        wait_on_inode(inode);
+    }
+repeat:
+    if (inode->i_count > 1) {
+        inode->i_count--;
+        return;
+    }
+    /* 如果i节点的链接数为0，则说明i节点对应文件被删除 */
+    if (!inode->i_nlinks) {
+        truncate(inode);
+        free_inode(inode);
+        return;
+    }
+    if (inode->i_dirt) {
+        write_inode(inode);
+        wait_on_inode(inode);
+        goto repeat;
+    }
+    inode->i_count--;
+    return;
 }
 
 struct m_inode * get_empty_inode(void) {
@@ -55,8 +188,6 @@ struct m_inode * get_empty_inode(void) {
                 if (!inode->i_dirt && !inode->i_lock) {
                     break;
                 }
-                // @todo
-                inode = NULL;
             }
         }
         if (!inode) {
@@ -160,5 +291,28 @@ static void read_inode(struct m_inode *inode) {
 }
 
 static void write_inode(struct m_inode * inode) {
+    struct super_block *sb;
+    struct buffer_head *bh;
+    int block;
 
+    lock_inode(inode);
+    if (!inode->i_dirt || !inode->i_dev) {
+        unlock_inode(inode);
+        return;
+    }
+    if (!(sb = get_super(inode->i_dev))) {
+        panic("trying to write inode without device");
+    }
+    block = 2 + sb->s_imap_blocks + sb->s_zmap_blocks
+        + (inode->i_num - 1) / INODES_PER_BLOCK;
+    if (!(bh = bread(inode->i_dev, block))) {
+        panic("unable to read i-node block");
+    }
+    ((struct d_inode *)bh->b_data)[(inode->i_num - 1) % INODES_PER_BLOCK]
+        = *(struct d_inode *)inode;
+    bh->b_dirt = 1;
+    inode->i_dirt = 0;
+
+    brelse(bh);
+    unlock_inode(inode);
 }

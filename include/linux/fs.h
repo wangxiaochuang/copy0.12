@@ -34,6 +34,8 @@ void buffer_init(long buffer_end);
 
 /* 每个逻辑块可存放的i节点数 */
 #define INODES_PER_BLOCK ((BLOCK_SIZE) / (sizeof (struct d_inode)))
+/* 每个逻辑块可存放的目录数 */
+#define DIR_ENTRIES_PER_BLOCK ((BLOCK_SIZE) / (sizeof (struct dir_entry)))
 
 /* 缓冲块头数据结构(重要) */
 struct buffer_head {
@@ -152,6 +154,25 @@ extern struct file file_table[NR_FILE];
 extern struct super_block super_block[NR_SUPER];
 extern int nr_buffers;
 
+/* 将i节点指定的文件截为0 */
+extern void truncate(struct m_inode * inode);
+
+/* 刷新i节点信息 */
+extern void sync_inodes(void);
+
+/* 等待指定的i节点 */
+extern void wait_on(struct m_inode * inode);
+
+/* 逻辑块（区段，磁盘块）位图操作。*/
+extern int bmap(struct m_inode * inode, int block);
+
+/* 根据路径名为打开文件操作作准备 */
+extern int open_namei(const char * pathname, int flag, int mode, 
+						struct m_inode ** res_inode);
+
+/* 释放一个i节点（回写入设备）*/
+extern void iput(struct m_inode * inode);
+
 /* 从设备读取指定节点号的一个i节点 */
 extern struct m_inode * iget(int dev, int nr);
 
@@ -166,8 +187,17 @@ extern void brelse(struct buffer_head * buf);
 
 extern struct buffer_head * bread(int dev, int block);
 
+/* 释放一个i节点 */
+extern void free_inode(struct m_inode * inode);
+
+/* 刷新指定设备缓冲区块 */
+extern int sync_dev(int dev);
+
 /* 读取指定设备的超级块 */
 extern struct super_block * get_super(int dev);
+
+/* 释放指定设备的超级块 */
+extern void put_super(int dev);
 
 extern int ROOT_DEV;
 

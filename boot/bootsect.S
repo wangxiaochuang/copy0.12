@@ -47,8 +47,22 @@ go:
     mov $SYSSEG, %ax
     mov %ax, %ds
 
-    mov $125, %cx
+    mov $100, %cx
     mov $0x5, %eax
+    mov $0, %ebx
+    1:
+        call disk_load
+        add $1, %eax
+    loop 1b
+
+    push %ax
+    mov %ds, %ax
+    # 增加51200字节，ds中需要除以16
+    add $3200, %ax
+    mov %ax, %ds
+    pop %ax
+
+    mov $100, %cx
     mov $0, %ebx
     1:
         call disk_load
