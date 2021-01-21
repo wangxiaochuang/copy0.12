@@ -1,4 +1,5 @@
 void panic(const char * fmt, ...);
+void do_exit(long error_code) __attribute__ ((noreturn));
 void console_print(const char * str);
 int printk(const char * fmt, ...);
 int dumpmem(const void *address, int len);

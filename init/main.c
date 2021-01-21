@@ -1,9 +1,9 @@
 #define __LIBRARY__
 #include <unistd.h>
 #include <errno.h>
-static inline _syscall0(int, fork)
-static inline _syscall0(int, pause)
-static inline _syscall1(int, setup, void *, BIOS)
+_syscall0(int, fork)
+_syscall0(int, pause)
+_syscall1(int, setup, void *, BIOS)
 
 #include <linux/sched.h>
 #include <linux/kernel.h>
@@ -39,6 +39,9 @@ extern long kernel_mktime(struct tm * tm);
 static long memory_end = 0;             /* 机器所具有的物理内存容量 */
 static long buffer_memory_end = 0;      /* 高速缓冲区末端地址 */
 static long main_memory_start = 0;      /* 主内存开始位置 */
+
+static char * argv_rc[] = { "/bin/sh", NULL };
+static char * envp_rc[] = { "HOME=/", NULL ,NULL };
 
 #define CMOS_READ(addr) ({		\
 	outb_p(0x80 | addr, 0x70);	\
@@ -125,6 +128,21 @@ void main(void) {
 }
 
 void init(void) {
+    int pid, i;
+
     setup((void *) &drive_info);
     (void) open("/dev/tty1", O_RDWR, 0);
+    (void) dup(0);
+    (void) dup(0);
+    
+    if (!(pid = fork())) {
+        close(0);
+        if (open("/etc/rc", O_RDONLY, 0)) {
+            panic("i am here");
+			_exit(1);
+		}
+        execve("/bin/sh", argv_rc, envp_rc);
+		_exit(2);
+    }
+    for(;;);
 }

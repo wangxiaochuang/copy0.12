@@ -1,3 +1,4 @@
+EIP		= 0x20
 CS		= 0x24
 OLDSS		= 0x30
 
@@ -8,7 +9,7 @@ blocked = (33*16)
 
 ENOSYS = 38
 
-.globl system_call, timer_interrupt, sys_fork
+.globl system_call, timer_interrupt, sys_fork, sys_execve
 .globl hd_interrupt
 
 .align 4
@@ -99,6 +100,14 @@ timer_interrupt:
 	call do_timer		# 'do_timer(long CPL)' does everything from
 	addl $4,%esp		# task switching to accounting ...
 	jmp ret_from_sys_call
+
+.align 4
+sys_execve:
+	lea EIP(%esp),%eax
+	pushl %eax
+	call do_execve
+	addl $4,%esp
+	ret
 
 .align 4
 sys_fork:

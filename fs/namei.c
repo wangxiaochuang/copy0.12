@@ -254,6 +254,9 @@ int open_namei(const char * pathname, int flag, int mode,
         return -EPERM;
     }
     inode->i_atime = CURRENT_TIME;
-    panic("i am here %s, len: %d", basename, namelen);
-
+    if (flag & O_TRUNC) {
+        truncate(inode);
+    }
+    *res_inode = inode;
+    return 0;
 }

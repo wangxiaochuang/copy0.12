@@ -167,6 +167,13 @@ type name(atype a, btype b, ctype c) 				\
 #endif /* __LIBRARY__ */
 
 extern int errno;
+int close(int fildes);
+int dup(int fildes);
+int execve(const char * filename, char ** argv, char ** envp);
+void _exit(int status) __attribute__ ((noreturn));
+int fork(void);
+int open(const char * filename, int flag, ...);
+int pause(void);
 int write(int fildes, const char * buf, off_t count);
 
 #endif
