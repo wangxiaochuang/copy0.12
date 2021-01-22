@@ -1,20 +1,18 @@
 #ifndef _SYS_TERMIOS_H_
 #define _SYS_TERMIOS_H_
 
-#define NCCS            20
+#include <sys/types.h>
 
-typedef unsigned long   tcflag_t;
-typedef unsigned char   cc_t;
-typedef unsigned long   speed_t;
+#define TTY_BUF_SIZE 1024
 
+#define NCCS 17
 struct termios {
-	tcflag_t        c_iflag;        /* input flags */
-	tcflag_t        c_oflag;        /* output flags */
-	tcflag_t        c_cflag;        /* control flags */
-	tcflag_t        c_lflag;        /* local flags */
-	cc_t            c_cc[NCCS];     /* control chars */
-	speed_t         c_ispeed;       /* input speed */
-	speed_t         c_ospeed;       /* output speed */
+	tcflag_t c_iflag;		/* input mode flags */
+	tcflag_t c_oflag;		/* output mode flags */
+	tcflag_t c_cflag;		/* control mode flags */
+	tcflag_t c_lflag;		/* local mode flags */
+	cc_t c_line;			/* line discipline */
+	cc_t c_cc[NCCS];		/* control characters */
 };
 
 #endif

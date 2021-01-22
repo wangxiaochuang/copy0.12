@@ -12,5 +12,5 @@ int do_execve(unsigned long * eip, long tmp, char * filename,
     if ((0xffff & eip[1]) != 0x000f) {
 		panic("execve called from supervisor mode");
 	}
-    panic("i am here.........");
+    panic("i am here in do_execve.........");
 }

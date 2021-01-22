@@ -9,6 +9,16 @@ extern int NR_CONSOLES;
 
 #include <termios.h>
 
+#define TTY_BUF_SIZE 1024
+
+struct tty_queue {
+	unsigned long data;
+	unsigned long head;
+	unsigned long tail;
+	struct task_struct *proc_list;
+	char buf[TTY_BUF_SIZE];
+};
+
 #define IS_A_PTY(min)		((min) & 0x80)
 #define IS_A_PTY_MASTER(min)	(((min) & 0xC0) == 0x80)
 #define IS_A_PTY_SLAVE(min)	(((min) & 0xC0) == 0xC0)
@@ -31,6 +41,10 @@ extern int fg_console;
 #define TTY_TABLE(nr) \
 (tty_table + ((nr) ? (((nr) < 64)?(nr)-1:(nr)) : fg_console))
 
+#define INIT_C_CC "\003\034\177\025\004\0\1\0\021\023\032\0\022\017\027\026\0"
+
+void con_init(void);
+void tty_init(void);
 void update_screen(void);
 
 #endif

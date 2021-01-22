@@ -5,6 +5,7 @@ _syscall0(int, fork)
 _syscall0(int, pause)
 _syscall1(int, setup, void *, BIOS)
 
+#include <linux/tty.h>
 #include <linux/sched.h>
 #include <linux/kernel.h>
 #include <time.h>
@@ -110,7 +111,7 @@ void main(void) {
     trap_init();
     blk_dev_init();
     chr_dev_init();
-    con_init();
+    tty_init();
     time_init();
     sched_init();
     buffer_init(buffer_memory_end);
@@ -135,6 +136,7 @@ void init(void) {
     (void) dup(0);
     (void) dup(0);
     
+    printf("this is from printf function\n");
     if (!(pid = fork())) {
         close(0);
         if (open("/etc/rc", O_RDONLY, 0)) {
