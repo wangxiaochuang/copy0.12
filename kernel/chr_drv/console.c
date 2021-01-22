@@ -4,6 +4,7 @@
 #include <asm/io.h>
 #include <asm/system.h>
 
+
 #define ORIG_X			(*(unsigned char *)0x90000)
 #define ORIG_Y			(*(unsigned char *)0x90001)
 #define ORIG_VIDEO_PAGE		(*(unsigned short *)0x90004)
@@ -257,6 +258,256 @@ static inline void hide_cursor(int currcons) {
 
 enum { ESnormal, ESesc, ESsquare, ESgetpars, ESgotpars, ESfunckey, 
 	ESsetterm, ESsetgraph };
+
+void con_write(struct tty_struct * tty) {
+	panic("i am here 9999999999999999");	
+	int nr;
+	char c;
+	int currcons;
+     
+	currcons = tty - tty_table;
+	if ((currcons >= MAX_CONSOLES) || (currcons < 0))
+		panic("con_write: illegal tty");
+ 	   
+	nr = CHARS(tty->write_q);
+	while (nr--) {
+		if (tty->stopped)
+			break;
+		GETCH(tty->write_q,c);
+		if (c == 24 || c == 26)
+			state = ESnormal;
+		switch(state) {
+			case ESnormal:
+				if (c>31 && c<127) {
+					if (x>=video_num_columns) {
+						x -= video_num_columns;
+						pos -= video_size_row;
+						lf(currcons);
+					}
+					__asm__("movb %2,%%ah\n\t"
+						"movw %%ax,%1\n\t"
+						::"a" (translate[c-32]),
+						"m" (*(short *)pos),
+						"m" (attr)
+						);
+					pos += 2;
+					x++;
+				} else if (c==27)
+					state=ESesc;
+				else if (c==10 || c==11 || c==12)
+					lf(currcons);
+				else if (c==13)
+					cr(currcons);
+				else if (c==ERASE_CHAR(tty))
+					del(currcons);
+				else if (c==8) {
+					if (x) {
+						x--;
+						pos -= 2;
+					}
+				} else if (c==9) {
+					c=8-(x&7);
+					x += c;
+					pos += c<<1;
+					if (x>video_num_columns) {
+						x -= video_num_columns;
+						pos -= video_size_row;
+						lf(currcons);
+					}
+					c=9;
+				} else if (c==7)
+					sysbeep();
+			  	else if (c == 14)
+			  		translate = GRAF_TRANS;
+			  	else if (c == 15)
+					translate = NORM_TRANS;
+				break;
+			case ESesc:
+				state = ESnormal;
+				switch (c)
+				{
+				  case '[':
+					state=ESsquare;
+					break;
+				  case 'E':
+					gotoxy(currcons,0,y+1);
+					break;
+				  case 'M':
+					ri(currcons);
+					break;
+				  case 'D':
+					lf(currcons);
+					break;
+				  case 'Z':
+					respond(currcons,tty);
+					break;
+				  case '7':
+					save_cur(currcons);
+					break;
+				  case '8':
+					restore_cur(currcons);
+					break;
+				  case '(':  case ')':
+				    	state = ESsetgraph;		
+					break;
+				  case 'P':
+				    	state = ESsetterm;  
+				    	break;
+				  case '#':
+				  	state = -1;
+				  	break;  	
+				  case 'c':
+					tty->termios = DEF_TERMIOS;
+				  	state = restate = ESnormal;
+					checkin = 0;
+					top = 0;
+					bottom = video_num_lines;
+					break;
+				 /* case '>':   Numeric keypad */
+				 /* case '=':   Appl. keypad */
+				}	
+				break;
+			case ESsquare:
+				for(npar=0;npar<NPAR;npar++)
+					par[npar]=0;
+				npar=0;
+				state=ESgetpars;
+				if (c =='[')  /* Function key */
+				{ state=ESfunckey;
+				  break;
+				}  
+				if ((ques=(c=='?')))
+					break;
+			case ESgetpars:
+				if (c==';' && npar<NPAR-1) {
+					npar++;
+					break;
+				} else if (c>='0' && c<='9') {
+					par[npar]=10*par[npar]+c-'0';
+					break;
+				} else state=ESgotpars;
+			case ESgotpars:
+				state = ESnormal;
+				if (ques)
+				{ ques =0;
+				  break;
+				}  
+				switch(c) {
+					case 'G': case '`':
+						if (par[0]) par[0]--;
+						gotoxy(currcons,par[0],y);
+						break;
+					case 'A':
+						if (!par[0]) par[0]++;
+						gotoxy(currcons,x,y-par[0]);
+						break;
+					case 'B': case 'e':
+						if (!par[0]) par[0]++;
+						gotoxy(currcons,x,y+par[0]);
+						break;
+					case 'C': case 'a':
+						if (!par[0]) par[0]++;
+						gotoxy(currcons,x+par[0],y);
+						break;
+					case 'D':
+						if (!par[0]) par[0]++;
+						gotoxy(currcons,x-par[0],y);
+						break;
+					case 'E':
+						if (!par[0]) par[0]++;
+						gotoxy(currcons,0,y+par[0]);
+						break;
+					case 'F':
+						if (!par[0]) par[0]++;
+						gotoxy(currcons,0,y-par[0]);
+						break;
+					case 'd':
+						if (par[0]) par[0]--;
+						gotoxy(currcons,x,par[0]);
+						break;
+					case 'H': case 'f':
+						if (par[0]) par[0]--;
+						if (par[1]) par[1]--;
+						gotoxy(currcons,par[1],par[0]);
+						break;
+					case 'J':
+						csi_J(currcons,par[0]);
+						break;
+					case 'K':
+						csi_K(currcons,par[0]);
+						break;
+					case 'L':
+						csi_L(currcons,par[0]);
+						break;
+					case 'M':
+						csi_M(currcons,par[0]);
+						break;
+					case 'P':
+						csi_P(currcons,par[0]);
+						break;
+					case '@':
+						csi_at(currcons,par[0]);
+						break;
+					case 'm':
+						csi_m(currcons);
+						break;
+					case 'r':
+						if (par[0]) par[0]--;
+						if (!par[1]) par[1] = video_num_lines;
+						if (par[0] < par[1] &&
+						    par[1] <= video_num_lines) {
+							top=par[0];
+							bottom=par[1];
+						}
+						break;
+					case 's':
+						save_cur(currcons);
+						break;
+					case 'u':
+						restore_cur(currcons);
+						break;
+					case 'l': /* blank interval */
+					case 'b': /* bold attribute */
+						  if (!((npar >= 2) &&
+						  ((par[1]-13) == par[0]) && 
+						  ((par[2]-17) == par[0]))) 
+						    break;
+						if ((c=='l')&&(par[0]>=0)&&(par[0]<=60))
+						{  
+						  blankinterval = HZ*60*par[0];
+						  blankcount = blankinterval;
+						}
+						if (c=='b')
+						  vc_cons[currcons].vc_bold_attr
+						    = par[0];
+				}
+				break;
+			case ESfunckey:
+				state = ESnormal;
+				break;
+			case ESsetterm:  /* Setterm functions. */
+				state = ESnormal;
+				if (c == 'S') {
+					def_attr = attr;
+					video_erase_char = (video_erase_char&0x0ff) | (def_attr<<8);
+				} else if (c == 'L')
+					; /*linewrap on*/
+				else if (c == 'l')
+					; /*linewrap off*/
+				break;
+			case ESsetgraph:
+				state = ESnormal;
+				if (c == '0')
+					translate = GRAF_TRANS;
+				else if (c == 'B')
+					translate = NORM_TRANS;
+				break;
+			default:
+				state = ESnormal;
+		}
+	}
+	set_cursor(currcons);
+}
 
 static void init_graph_info(char **desc) {
     video_page = ORIG_VIDEO_PAGE;

@@ -19,9 +19,22 @@ struct tty_queue {
 	char buf[TTY_BUF_SIZE];
 };
 
+#define IS_A_CONSOLE(min)	(((min) & 0xC0) == 0x00)
 #define IS_A_PTY(min)		((min) & 0x80)
 #define IS_A_PTY_MASTER(min)	(((min) & 0xC0) == 0x80)
 #define IS_A_PTY_SLAVE(min)	(((min) & 0xC0) == 0xC0)
+
+#define INC(a) ((a) = ((a)+1) & (TTY_BUF_SIZE-1))
+#define DEC(a) ((a) = ((a)-1) & (TTY_BUF_SIZE-1))
+#define EMPTY(a) ((a)->head == (a)->tail)
+#define LEFT(a) (((a)->tail-(a)->head-1)&(TTY_BUF_SIZE-1))
+#define LAST(a) ((a)->buf[(TTY_BUF_SIZE-1)&((a)->head-1)])
+#define FULL(a) (!LEFT(a))
+#define CHARS(a) (((a)->head-(a)->tail)&(TTY_BUF_SIZE-1))
+#define GETCH(queue,c) \
+(void)({c=(queue)->buf[(queue)->tail];INC((queue)->tail);})
+#define PUTCH(c,queue) \
+(void)({(queue)->buf[(queue)->head]=(c);INC((queue)->head);})
 
 /* tty数据结构 */
 struct tty_struct {
@@ -45,6 +58,12 @@ extern int fg_console;
 
 void con_init(void);
 void tty_init(void);
+
+int tty_read(unsigned c, char * buf, int n);
+int tty_write(unsigned c, char * buf, int n);
+
+void con_write(struct tty_struct * tty);
+
 void update_screen(void);
 
 #endif

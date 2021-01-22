@@ -4,6 +4,8 @@
 #include <linux/kernel.h>
 #include <linux/sched.h>
 
+extern int rw_char(int rw,int dev, char * buf, int count, off_t * pos);
+
 int sys_write(unsigned int fd, char * buf, int count) {
     struct file *file;
     struct m_inode *inode;
