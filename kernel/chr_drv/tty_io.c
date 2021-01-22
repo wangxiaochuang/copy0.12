@@ -1,9 +1,16 @@
 #include <ctype.h>
 #include <errno.h>
+#include <signal.h>
+#include <unistd.h>
+
 #include <linux/sched.h>
 #include <linux/tty.h>
 #include <asm/segment.h>
 #include <asm/system.h>
+
+int kill_pg(int pgrp, int sig, int priv);
+/* 判断一个进程组是否是孤儿进程 */
+int is_orphaned_pgrp(int pgrp);
 
 #define _L_FLAG(tty,f)  ((tty)->termios.c_lflag & f)
 #define _I_FLAG(tty,f)  ((tty)->termios.c_iflag & f)
@@ -88,6 +95,117 @@ static void sleep_if_full(struct tty_queue * queue) {
 	sti();
 }
 
+void copy_to_cooked(struct tty_struct * tty)
+{
+	signed char c;
+
+	if (!(tty->read_q || tty->write_q || tty->secondary)) {
+		printk("copy_to_cooked: missing queues\n\r");
+		return;
+	}
+	while (1) {
+		if (EMPTY(tty->read_q))
+			break;
+		if (FULL(tty->secondary))
+			break;
+		GETCH(tty->read_q,c);
+		if (c==13) {
+			if (I_CRNL(tty))
+				c=10;
+			else if (I_NOCR(tty))
+				continue;
+		} else if (c==10 && I_NLCR(tty))
+			c=13;
+		if (I_UCLC(tty))
+			c = tolower(c);
+		if (L_CANON(tty)) {
+			if ((KILL_CHAR(tty) != _POSIX_VDISABLE) &&
+			    (c==KILL_CHAR(tty))) {
+				/* deal with killing the input line */
+				while(!(EMPTY(tty->secondary) ||
+				        (c=LAST(tty->secondary))==10 ||
+				        ((EOF_CHAR(tty) != _POSIX_VDISABLE) &&
+					 (c==EOF_CHAR(tty))))) {
+					if (L_ECHO(tty)) {
+						if (c<32)
+							PUTCH(127,tty->write_q);
+						PUTCH(127,tty->write_q);
+						tty->write(tty);
+					}
+					DEC(tty->secondary->head);
+				}
+				continue;
+			}
+			if ((ERASE_CHAR(tty) != _POSIX_VDISABLE) &&
+			    (c==ERASE_CHAR(tty))) {
+				if (EMPTY(tty->secondary) ||
+				   (c=LAST(tty->secondary))==10 ||
+				   ((EOF_CHAR(tty) != _POSIX_VDISABLE) &&
+				    (c==EOF_CHAR(tty))))
+					continue;
+				if (L_ECHO(tty)) {
+					if (c<32)
+						PUTCH(127,tty->write_q);
+					PUTCH(127,tty->write_q);
+					tty->write(tty);
+				}
+				DEC(tty->secondary->head);
+				continue;
+			}
+		}
+		if (I_IXON(tty)) {
+			if ((STOP_CHAR(tty) != _POSIX_VDISABLE) &&
+			    (c==STOP_CHAR(tty))) {
+				tty->stopped=1;
+				tty->write(tty);
+				continue;
+			}
+			if ((START_CHAR(tty) != _POSIX_VDISABLE) &&
+			    (c==START_CHAR(tty))) {
+				tty->stopped=0;
+				tty->write(tty);
+				continue;
+			}
+		}
+		if (L_ISIG(tty)) {
+			if ((INTR_CHAR(tty) != _POSIX_VDISABLE) &&
+			    (c==INTR_CHAR(tty))) {
+				kill_pg(tty->pgrp, SIGINT, 1);
+				continue;
+			}
+			if ((QUIT_CHAR(tty) != _POSIX_VDISABLE) &&
+			    (c==QUIT_CHAR(tty))) {
+				kill_pg(tty->pgrp, SIGQUIT, 1);
+				continue;
+			}
+			if ((SUSPEND_CHAR(tty) != _POSIX_VDISABLE) &&
+			    (c==SUSPEND_CHAR(tty))) {
+				if (!is_orphaned_pgrp(tty->pgrp))
+					kill_pg(tty->pgrp, SIGTSTP, 1);
+				continue;
+			}
+		}
+		if (c==10 || (EOF_CHAR(tty) != _POSIX_VDISABLE &&
+			      c==EOF_CHAR(tty)))
+			tty->secondary->data++;
+		if (L_ECHO(tty)) {
+			if (c==10) {
+				PUTCH(10,tty->write_q);
+				PUTCH(13,tty->write_q);
+			} else if (c<32) {
+				if (L_ECHOCTL(tty)) {
+					PUTCH('^',tty->write_q);
+					PUTCH(c+64,tty->write_q);
+				}
+			} else
+				PUTCH(c,tty->write_q);
+			tty->write(tty);
+		}
+		PUTCH(c,tty->secondary);
+	}
+	wake_up(&tty->secondary->proc_list);
+}
+
 void chr_dev_init(void) {}
 
 int tty_read(unsigned channel, char * buf, int nr) {
@@ -135,7 +253,6 @@ int tty_write(unsigned channel, char *buf, int nr) {
         if (nr > 0)
             schedule();
     }
-    panic("i am here in tty_write.........\n");
     return (b - buf);
 }
 

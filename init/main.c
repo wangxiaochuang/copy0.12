@@ -136,11 +136,11 @@ void init(void) {
     (void) dup(0);
     (void) dup(0);
     
-    printf("this is from printf function\n");
+    printf("this is from printf function\n\n");
     if (!(pid = fork())) {
         close(0);
         if (open("/etc/rc", O_RDONLY, 0)) {
-            panic("i am here");
+            panic("open /etc/rc failed...");
 			_exit(1);
 		}
         execve("/bin/sh", argv_rc, envp_rc);

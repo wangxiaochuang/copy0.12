@@ -1,8 +1,20 @@
 #include <linux/sched.h>
 #include <linux/tty.h>
+#include <linux/kernel.h>
 
 #include <asm/io.h>
 #include <asm/system.h>
+
+/* 该符号常量定义终端IO结构的默认数据 */
+#define DEF_TERMIOS 		                                \
+	(struct termios) { 		                                \
+	        ICRNL, 			                                \
+        	OPOST | ONLCR,                                  \
+	        0,                                              \
+	        IXON | ISIG | ICANON | ECHO | ECHOCTL | ECHOKE, \
+	        0,                                              \
+	        INIT_C_CC                                       \
+    }
 
 
 #define ORIG_X			(*(unsigned char *)0x90000)
@@ -68,8 +80,12 @@ static struct {
 #define state		(vc_cons[currcons].vc_state)
 #define restate		(vc_cons[currcons].vc_restate)
 #define checkin		(vc_cons[currcons].vc_checkin)
+#define npar		(vc_cons[currcons].vc_npar)
+#define par		(vc_cons[currcons].vc_par)
 #define ques		(vc_cons[currcons].vc_ques)
 #define attr		(vc_cons[currcons].vc_attr)
+#define saved_x		(vc_cons[currcons].vc_saved_x)
+#define saved_y		(vc_cons[currcons].vc_saved_y)
 #define translate	(vc_cons[currcons].vc_translate)
 #define video_mem_start	(vc_cons[currcons].vc_video_mem_start)
 #define video_mem_end	(vc_cons[currcons].vc_video_mem_end)
@@ -80,6 +96,8 @@ static struct {
 // 用于复位黑屏操作计数器
 int blankinterval = 0;
 int blankcount = 0;
+
+static void sysbeep(void);
 
 #define RESPONSE "\033[?1;2c"
 
@@ -231,9 +249,129 @@ static void lf(int currcons) {
 	scrup(currcons);
 }
 
+static void ri(int currcons) {
+	if (y>top) {
+		y--;
+		pos -= video_size_row;
+		return;
+	}
+	scrdown(currcons);
+}
+
 static void cr(int currcons) {
 	pos -= x<<1;
 	x=0;
+}
+
+static void del(int currcons) {
+	if (x) {
+		pos -= 2;
+		x--;
+		*(unsigned short *)pos = video_erase_char;
+	}
+}
+
+static void csi_J(int currcons, int vpar) {
+	long count;
+	long start;
+
+	switch (vpar) {
+		case 0:	/* erase from cursor to end of display */
+			count = (scr_end-pos)>>1;
+			start = pos;
+			break;
+		case 1:	/* erase from start to cursor */
+			count = (pos-origin)>>1;
+			start = origin;
+			break;
+		case 2: /* erase whole display */
+			count = video_num_columns * video_num_lines;
+			start = origin;
+			break;
+		default:
+			return;
+	}
+	__asm__("cld\n\t"
+		"rep\n\t"
+		"stosw\n\t"
+		::"c" (count),
+		"D" (start),"a" (video_erase_char)
+		);
+}
+
+static void csi_K(int currcons, int vpar) {
+	long count;
+	long start;
+
+	switch (vpar) {
+		case 0:	/* erase from cursor to end of line */
+			if (x>=video_num_columns)
+				return;
+			count = video_num_columns-x;
+			start = pos;
+			break;
+		case 1:	/* erase from start of line to cursor */
+			start = pos - (x<<1);
+			count = (x<video_num_columns)?x:video_num_columns;
+			break;
+		case 2: /* erase whole line */
+			start = pos - (x<<1);
+			count = video_num_columns;
+			break;
+		default:
+			return;
+	}
+	__asm__("cld\n\t"
+		"rep\n\t"
+		"stosw\n\t"
+		::"c" (count),
+		"D" (start),"a" (video_erase_char)
+		);
+}
+
+void csi_m(int currcons ) {
+	int i;
+
+	for (i=0;i<=npar;i++)
+		switch (par[i]) {
+			case 0: attr=def_attr;break;  /* default */
+			case 1: attr=(iscolor?attr|0x08:attr|0x0f);break;  /* bold */
+			/*case 4: attr=attr|0x01;break;*/  /* underline */
+			case 4: /* bold */ 
+			  if (!iscolor)
+			    attr |= 0x01;
+			  else
+			  { /* check if forground == background */
+			    if (vc_cons[currcons].vc_bold_attr != -1)
+			      attr = (vc_cons[currcons].vc_bold_attr&0x0f)|(0xf0&(attr));
+			    else
+			    { short newattr = (attr&0xf0)|(0xf&(~attr));
+			      attr = ((newattr&0xf)==((attr>>4)&0xf)? 
+			        (attr&0xf0)|(((attr&0xf)+1)%0xf):
+			        newattr);
+			    }    
+			  }
+			  break;
+			case 5: attr=attr|0x80;break;  /* blinking */
+			case 7: attr=(attr<<4)|(attr>>4);break;  /* negative */
+			case 22: attr=attr&0xf7;break; /* not bold */ 
+			case 24: attr=attr&0xfe;break;  /* not underline */
+			case 25: attr=attr&0x7f;break;  /* not blinking */
+			case 27: attr=def_attr;break; /* positive image */
+			case 39: attr=(attr & 0xf0)|(def_attr & 0x0f); break;
+			case 49: attr=(attr & 0x0f)|(def_attr & 0xf0); break;
+			default:
+			  if (!can_do_colour)
+			    break;
+			  iscolor = 1;
+			  if ((par[i]>=30) && (par[i]<=38))
+			    attr = (attr & 0xf0) | (par[i]-30);
+			  else  /* Background color */
+			    if ((par[i]>=40) && (par[i]<=48))
+			      attr = (attr & 0x0f) | ((par[i]-40)<<4);
+			    else
+				break;
+		}
 }
 
 static inline void set_cursor(int currcons) {
@@ -256,11 +394,118 @@ static inline void hide_cursor(int currcons) {
 	outb_p(0xff&((scr_end-video_mem_base)>>1), video_port_val);
 }
 
+static void respond(int currcons, struct tty_struct * tty) {
+	char * p = RESPONSE;
+
+	cli();
+	while (*p) {
+		PUTCH(*p,tty->read_q);
+		p++;
+	}
+	sti();
+	copy_to_cooked(tty);
+}
+
+static void insert_char(int currcons) {
+	int i=x;
+	unsigned short tmp, old = video_erase_char;
+	unsigned short * p = (unsigned short *) pos;
+
+	while (i++<video_num_columns) {
+		tmp=*p;
+		*p=old;
+		old=tmp;
+		p++;
+	}
+}
+
+static void insert_line(int currcons) {
+	int oldtop,oldbottom;
+
+	oldtop=top;
+	oldbottom=bottom;
+	top=y;
+	bottom = video_num_lines;
+	scrdown(currcons);
+	top=oldtop;
+	bottom=oldbottom;
+}
+
+static void delete_char(int currcons) {
+	int i;
+	unsigned short * p = (unsigned short *) pos;
+
+	if (x>=video_num_columns)
+		return;
+	i = x;
+	while (++i < video_num_columns) {
+		*p = *(p+1);
+		p++;
+	}
+	*p = video_erase_char;
+}
+
+static void delete_line(int currcons) {
+	int oldtop,oldbottom;
+
+	oldtop=top;
+	oldbottom=bottom;
+	top=y;
+	bottom = video_num_lines;
+	scrup(currcons);
+	top=oldtop;
+	bottom=oldbottom;
+}
+
+static void csi_at(int currcons, unsigned int nr) {
+	if (nr > video_num_columns)
+		nr = video_num_columns;
+	else if (!nr)
+		nr = 1;
+	while (nr--)
+		insert_char(currcons);
+}
+
+static void csi_L(int currcons, unsigned int nr) {
+	if (nr > video_num_lines)
+		nr = video_num_lines;
+	else if (!nr)
+		nr = 1;
+	while (nr--)
+		insert_line(currcons);
+}
+
+static void csi_P(int currcons, unsigned int nr) {
+	if (nr > video_num_columns)
+		nr = video_num_columns;
+	else if (!nr)
+		nr = 1;
+	while (nr--)
+		delete_char(currcons);
+}
+
+static void csi_M(int currcons, unsigned int nr) {
+	if (nr > video_num_lines)
+		nr = video_num_lines;
+	else if (!nr)
+		nr=1;
+	while (nr--)
+		delete_line(currcons);
+}
+
+static void save_cur(int currcons) {
+	saved_x=x;
+	saved_y=y;
+}
+
+static void restore_cur(int currcons) {
+	gotoxy(currcons,saved_x, saved_y);
+}
+
 enum { ESnormal, ESesc, ESsquare, ESgetpars, ESgotpars, ESfunckey, 
 	ESsetterm, ESsetgraph };
 
 void con_write(struct tty_struct * tty) {
-	panic("i am here 9999999999999999");	
 	int nr;
 	char c;
 	int currcons;
@@ -274,12 +519,14 @@ void con_write(struct tty_struct * tty) {
 		if (tty->stopped)
 			break;
 		GETCH(tty->write_q,c);
+		// 24: cancel->Ctrl+X, 26: substitude-> Ctrl+Z
 		if (c == 24 || c == 26)
 			state = ESnormal;
 		switch(state) {
 			case ESnormal:
+				// 普通字符
 				if (c>31 && c<127) {
-					if (x>=video_num_columns) {
+					if (x >= video_num_columns) {
 						x -= video_num_columns;
 						pos -= video_size_row;
 						lf(currcons);
@@ -292,19 +539,23 @@ void con_write(struct tty_struct * tty) {
 						);
 					pos += 2;
 					x++;
+				// ESC
 				} else if (c==27)
 					state=ESesc;
 				else if (c==10 || c==11 || c==12)
 					lf(currcons);
 				else if (c==13)
 					cr(currcons);
+				// del
 				else if (c==ERASE_CHAR(tty))
 					del(currcons);
+				// backspace
 				else if (c==8) {
 					if (x) {
 						x--;
 						pos -= 2;
 					}
+				// 水平制表符，光标移动到8的倍数上，超出则移到下一行并恢复c
 				} else if (c==9) {
 					c=8-(x&7);
 					x += c;
@@ -315,13 +566,15 @@ void con_write(struct tty_struct * tty) {
 						lf(currcons);
 					}
 					c=9;
+				// BEL 响铃
 				} else if (c==7)
 					sysbeep();
-			  	else if (c == 14)
+			  	else if (c == 14)				/* SO 换出，使用G1 */
 			  		translate = GRAF_TRANS;
-			  	else if (c == 15)
+			  	else if (c == 15)     			/* SI 换出，使用G0 */
 					translate = NORM_TRANS;
 				break;
+			// ESnormal下收到转义字符ESC，则转到本状态，处理完成后默认将是ESnormal状态
 			case ESesc:
 				state = ESnormal;
 				switch (c)
@@ -338,7 +591,7 @@ void con_write(struct tty_struct * tty) {
 				  case 'D':
 					lf(currcons);
 					break;
-				  case 'Z':
+				  case 'Z':							// 设备属性查询
 					respond(currcons,tty);
 					break;
 				  case '7':
@@ -611,6 +864,20 @@ void con_init(void) {
 void update_screen(void) {
     set_origin(fg_console);
     set_cursor(fg_console);
+}
+
+int beepcount = 0;
+
+static void sysbeep(void) {
+	/* enable counter 2 */
+	outb_p(inb_p(0x61)|3, 0x61);
+	/* set command for counter 2, 2 byte write */
+	outb_p(0xB6, 0x43);
+	/* send 0x637 for 750 HZ */
+	outb_p(0x37, 0x42);
+	outb(0x06, 0x42);
+	/* 1/8 second */
+	beepcount = HZ/8;	
 }
 
 static inline unsigned char new_get_fs_byte(const char * addr) {

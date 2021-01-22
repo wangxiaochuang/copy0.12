@@ -36,6 +36,15 @@ struct tty_queue {
 #define PUTCH(c,queue) \
 (void)({(queue)->buf[(queue)->head]=(c);INC((queue)->head);})
 
+#define INTR_CHAR(tty)		((tty)->termios.c_cc[VINTR])
+#define QUIT_CHAR(tty)		((tty)->termios.c_cc[VQUIT])
+#define ERASE_CHAR(tty)		((tty)->termios.c_cc[VERASE])
+#define KILL_CHAR(tty)		((tty)->termios.c_cc[VKILL])
+#define EOF_CHAR(tty)		((tty)->termios.c_cc[VEOF])
+#define START_CHAR(tty)		((tty)->termios.c_cc[VSTART])
+#define STOP_CHAR(tty)		((tty)->termios.c_cc[VSTOP])
+#define SUSPEND_CHAR(tty)	((tty)->termios.c_cc[VSUSP])
+
 /* tty数据结构 */
 struct tty_struct {
 	struct termios termios;		/* 终端io属性和控制字符数据结构 */
@@ -63,6 +72,8 @@ int tty_read(unsigned c, char * buf, int n);
 int tty_write(unsigned c, char * buf, int n);
 
 void con_write(struct tty_struct * tty);
+
+void copy_to_cooked(struct tty_struct * tty);
 
 void update_screen(void);
 

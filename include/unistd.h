@@ -1,6 +1,26 @@
 #ifndef _UNISTD_H
 #define _UNISTD_H
 
+/* 下面符号常数指出符合IEEE标准1003.1实现的版本号，是一个整数值 */
+#define _POSIX_VERSION 198808L
+
+/* chown()和fchown()的使用受限于进程的权限 */
+#define _POSIX_CHOWN_RESTRICTED	/* only root can do a chown (I think..) */
+								/* 只有超级用户可以执行chown（我想..） */
+/* 长于(NAME_MAX)的路径名将产生错误，而不会自动截断 */
+#define _POSIX_NO_TRUNC			/* no pathname truncation (but see in kernel) */
+								/* 路径名不截断（但是请看内核代码）*/
+// 下面这个符号将定义成字符值，该值禁止终端对其的处理。	 
+// _POSIX_VDISABLE 用于控制终端某些特殊字符的功能。当一个终端termios结构中c_cc[]数组某项
+// 字符代码值等于_POSIX_VDISABLE的值时，表示禁止使用相应的特殊字符。
+#define _POSIX_VDISABLE '\0'	/* character to disable things like ^C */
+								/* 禁止像^C这样的字符 */
+/* 系统实现支持作业控制 */
+#define _POSIX_JOB_CONTROL
+
+/* 每个进程都有一保存的set-user-ID和一保存的set-group-ID */
+#define _POSIX_SAVED_IDS		/* Implemented, for whatever good it is */
+
 #ifndef NULL
 #define NULL    ((void *)0)     /* 定义空指针 */
 #endif
