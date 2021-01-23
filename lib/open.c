@@ -18,3 +18,4 @@ int open(const char * filename, int flag, ...) {
     errno = -res;
     return -1;
 }
+

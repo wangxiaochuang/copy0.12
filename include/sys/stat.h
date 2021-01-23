@@ -56,4 +56,7 @@ struct stat {
 #define S_IWOTH 00002           /* 其他人写许可 */
 #define S_IXOTH 00001           /* 其他人执行/搜索许可 */
 
+/* 取指定文件句柄的文件状态信息 */
+extern int fstat(int fildes, struct stat *stat_buf);
+
 #endif

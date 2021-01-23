@@ -4,7 +4,25 @@
 #include <linux/kernel.h>
 #include <asm/system.h>
 
+extern void write_verify(unsigned long address);
+
 static long last_pid = 0;
+
+void verify_area(void *addr, int size) {
+    unsigned long start;
+    start = (unsigned long) addr;
+    // 地址的页偏移加上验证的size，得到验证范围到页起始地址的偏移
+    size += start & 0xfff;
+    // 检测以页为单位，所以找到页开始地址
+    start &= 0xfffff000;
+    start += get_base(current->ldt[2]);
+    while (size > 0) {
+        size -= 4096;
+        // 检测start开始的页是否可写，否则复制页面
+        write_verify(start);
+        start += 4096;
+    }
+}
 
 static int copy_mem(int nr, struct task_struct * p) {
     unsigned long old_data_base, new_data_base, data_limit;

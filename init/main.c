@@ -1,9 +1,11 @@
 #define __LIBRARY__
 #include <unistd.h>
 #include <errno.h>
-_syscall0(int, fork)
-_syscall0(int, pause)
-_syscall1(int, setup, void *, BIOS)
+
+// @todo
+extern inline _syscall0(int, fork)
+extern inline _syscall0(int, pause)
+extern inline _syscall1(int, setup, void *, BIOS)
 
 #include <linux/tty.h>
 #include <linux/sched.h>
@@ -17,6 +19,7 @@ _syscall1(int, setup, void *, BIOS)
 #include <fcntl.h>
 
 #include <linux/fs.h>
+#include <c.h>
 
 // #define RAMDISK 2048
 
@@ -129,6 +132,7 @@ void main(void) {
 }
 
 void init(void) {
+    char buf[512];
     int pid, i;
 
     setup((void *) &drive_info);
@@ -143,6 +147,7 @@ void init(void) {
             panic("open /etc/rc failed...");
 			_exit(1);
 		}
+        list_file("/usr/local");
         execve("/bin/sh", argv_rc, envp_rc);
 		_exit(2);
     }

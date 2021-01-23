@@ -6,6 +6,10 @@
 #include <linux/sched.h>
 #include <linux/tty.h>
 
+int sys_ustat(int dev, struct ustat * ubuf) {
+	return -ENOSYS;
+}
+
 static int check_char_dev(struct m_inode * inode, int dev, int flag) {
     struct tty_struct *tty;
 	int min;

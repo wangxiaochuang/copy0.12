@@ -17,6 +17,11 @@ struct request {
     struct request *next;
 };
 
+/**
+ * 1. 读优先
+ * 2. 设备号小优先
+ * 3. 扇区号小优先
+ **/
 #define IN_ORDER(s1,s2) \
 ((s1)->cmd < (s2)->cmd || ((s1)->cmd == (s2)->cmd && \
 ((s1)->dev < (s2)->dev || ((s1)->dev == (s2)->dev && \

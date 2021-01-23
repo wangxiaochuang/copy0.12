@@ -234,6 +234,24 @@ void do_wp_page(unsigned long error_code, unsigned long address) {
 		*((unsigned long *) ((address >> 20) & 0xffc)))));
 }
 
+void write_verify(unsigned long address) {
+	unsigned long page;
+
+	// 页目录项都不存在，就不管了，其没有共享和写时复制可言
+	if (!((page = *((unsigned long *) ((address >> 20) & 0xffc))) & 1)) {
+		return;
+	}
+
+	page &= 0xfffff000;
+	// 得到页表项的物理地址
+	page += ((address >> 10) & 0xffc);
+	// 不可写但存在
+	if ((3 & *(unsigned long *) page) == 1) {
+		un_wp_page((unsigned long *) page);
+	}
+	return;
+}
+
 /**
  * 4M - 16M
  */

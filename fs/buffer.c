@@ -66,6 +66,7 @@ static inline void remove_from_queues(struct buffer_head * bh) {
 	if (bh->b_prev) {
 		bh->b_prev->b_next = bh->b_next;
 	}
+    // 要移除的是hash表的第一块，则让hash表的该位置指向下一个
 	if (hash(bh->b_dev, bh->b_blocknr) == bh) {
 		hash(bh->b_dev, bh->b_blocknr) = bh->b_next;
 	}
@@ -131,6 +132,10 @@ struct buffer_head * get_hash_table(int dev, int block)
 
 #define BADNESS(bh) (((bh)->b_dirt << 1) + (bh)->b_lock)
 
+/**
+ * 先到hash表中通过dev和block找一个bh，不存在就到空闲列表中找一个，
+ * 填充好后放到hash表
+ **/
 struct buffer_head *getblk(int dev, int block) {
     struct buffer_head *tmp, *bh = NULL;
 repeat:
@@ -142,21 +147,26 @@ repeat:
         if (tmp->b_count) {
             continue;
         }
+        // 如果两个bh，一个只是修改了，一个只是锁定了，那就取锁定的那个
         if (!bh || BADNESS(tmp) < BADNESS(bh)) {
             bh = tmp;
+            // 既没修改也没锁定
             if (!BADNESS(tmp)) {
                 break;
             }
         }
     } while ((tmp = tmp->b_next_free) != free_list);
     if (!bh) {
+        // 没找到，我就睡了，有空闲的bh了，请叫醒我
         sleep_on(&buffer_wait);
         goto repeat;
     }
     wait_on_buffer(bh);
+    // bh解锁后发现还有被占用，就继续找
     if (bh->b_count) {
         goto repeat;
     }
+    // 找到的这个有写入，就同步
     while (bh->b_dirt) {
         sync_dev(bh->b_dev);
         wait_on_buffer(bh);
@@ -164,6 +174,7 @@ repeat:
             goto repeat;
         }
     }
+    // 睡眠期间可能该缓冲块已经加入到高速缓冲中
     if (find_buffer(dev, block)) {
         goto repeat;
     }
@@ -190,6 +201,7 @@ void brelse(struct buffer_head * buf) {
 	wake_up(&buffer_wait);
 }
 
+// 通过块号将数据映射到高速缓冲区
 struct buffer_head *bread(int dev, int block) {
     struct buffer_head *bh;
 

@@ -7,6 +7,9 @@
 #include <const.h>
 #include <sys/stat.h>
 
+static struct m_inode * _namei(const char * filename, struct m_inode * base,
+    int follow_links);
+
 #define ACC_MODE(x) ("\004\002\006\377"[(x)&O_ACCMODE])
 
 #define MAY_EXEC 	1	/* 可执行 */
@@ -134,6 +137,19 @@ static struct m_inode * follow_link(struct m_inode * dir, struct m_inode * inode
         return inode;
     }
     // @todo
+    __asm__("mov %%fs,%0":"=r" (fs));
+    if (fs != 0x17 || !inode->i_zone[0] ||
+       !(bh = bread(inode->i_dev, inode->i_zone[0]))) {
+        iput(dir);
+        iput(inode);
+        return NULL;
+    }
+    iput(inode);
+    __asm__("mov %0,%%fs"::"r" ((unsigned short) 0x10));
+    inode = _namei(bh->b_data,dir,0);
+    __asm__("mov %0,%%fs"::"r" (fs));
+    brelse(bh);
+    return inode;
 }
 
 static struct m_inode * get_dir(const char * pathname, struct m_inode * inode) {
@@ -161,10 +177,12 @@ static struct m_inode * get_dir(const char * pathname, struct m_inode * inode) {
             return NULL;
         }
         for (namelen = 0; (c = get_fs_byte(pathname++)) && (c != '/'); namelen++);
+        // 如果c==0，说明读到最后一个字符了，否则c就为'/'
         if (!c) {
             return inode;
         }
         // inode指向basedir，de为basedir的dir_entry
+        // 只有第一次使用superblock，才会修改inode
         if (!(bh = find_entry(&inode, thisname, namelen, &de))) {
             iput(inode);
             return NULL;
@@ -180,6 +198,10 @@ static struct m_inode * get_dir(const char * pathname, struct m_inode * inode) {
             return NULL;
     }
 }
+/**
+ * 获取目录的inode，如 
+ *  /usr/local => inode of /usr, name: local, namelen: 5
+ **/
 static struct m_inode * dir_namei(const char * pathname,
     int * namelen, const char ** name, struct m_inode * base) {
 
@@ -187,20 +209,80 @@ static struct m_inode * dir_namei(const char * pathname,
     const char *basename;
     struct m_inode *dir;
 
+    // 比如：/usr/local ==> local
     if (!(dir = get_dir(pathname, base))) {
         return NULL;
     }
     basename = pathname;
+    // 最后basename为最后一个name
     while ((c = get_fs_byte(pathname++))) {
         if (c == '/') {
             basename = pathname;
         }
     }
-    // 获取顶层目录的名字和长度
+    // 获取最后一节的名字和长度
     *namelen = pathname - basename - 1;
     *name = basename;
     return dir;
 }
+
+struct m_inode * _namei(const char * pathname, struct m_inode * base,
+    int follow_links) {
+    const char * basename;
+    int inr, namelen;
+    struct m_inode * inode;
+    struct buffer_head * bh;
+    struct dir_entry * de;
+
+    if (!(base = dir_namei(pathname, &namelen, &basename, base))) {
+        return NULL;
+    }
+    /**
+     * /usr/local  => inode of /usr
+     * /usr/       => inode of /usr
+     **/
+    if (!namelen) {			/* special case: '/usr/' etc */
+        return base;
+    }
+    bh = find_entry(&base, basename, namelen, &de);
+    if (!bh) {
+        iput(base);
+        return NULL;
+    }
+    inr = de->inode;
+    brelse(bh);
+    if (!(inode = iget(base->i_dev, inr))) {
+        iput(base);
+        return NULL;
+    }
+    if (follow_link) {
+        inode = follow_link(base, inode);
+    } else {
+        iput(base);
+    }
+    inode->i_atime = CURRENT_TIME;
+    inode->i_dirt = 1;
+    return inode;
+}
+
+/**
+ * 取指定路径名的i节点，不跟随符号链接
+ * @param[in]	pathname	路径名
+ * @retval		成功返回对应的i节点，失败返回NULL
+*/
+struct m_inode * lnamei(const char * pathname) {
+    return _namei(pathname, NULL, 0);
+}
+
+/**
+ * 取指定路径名的i节点,跟随符号链接
+ * @param[in]	pathname	路径名
+ * @retval		成功返回对应的i节点，失败返回NULL
+ */
+struct m_inode * namei(const char * pathname) {
+    return _namei(pathname, NULL, 1);
+}
+
 int open_namei(const char * pathname, int flag, int mode,
     struct m_inode ** res_inode) {
 

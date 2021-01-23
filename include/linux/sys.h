@@ -8,19 +8,29 @@
 extern int sys_setup();
 extern int sys_exit();
 extern int sys_fork();
-extern int sys_write(unsigned int fd, char * buf, int count);
+extern int sys_read();
+extern int sys_write();
 extern int sys_open();
 extern int sys_close();
 extern int sys_execve();
+extern int sys_stat();
+extern int sys_lseek();
 extern int sys_dup();
+extern int sys_fstat();
 extern int sys_pause();
+extern int sys_ustat();
+extern int sys_lstat();
 
 /* 系统调用处理程序的指针数组表 */
-fn_ptr sys_call_table[] = { sys_setup, sys_exit, sys_fork, 0, sys_write, sys_open, sys_close, 0, 0, 0,
-    0, sys_execve, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, sys_pause,
+fn_ptr sys_call_table[] = { sys_setup, sys_exit, sys_fork, sys_read, sys_write, sys_open, sys_close, 0, 0, 0,
+    0, sys_execve, 0, 0, 0, 0, 0, 0, sys_stat, sys_lseek,
+    0, 0, 0, 0, 0, 0, 0, 0, sys_fstat, sys_pause,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, sys_dup, 0, 0, 0, 0, 0, 0, 0, 0
+    0, sys_dup, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, sys_ustat, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, sys_lstat, 0, 0
 };
 
 /* So we don't have to do any more manual updating.... */

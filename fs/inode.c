@@ -41,12 +41,14 @@ void sync_inodes(void) {
     inode = 0 + inode_table;
     for (i = 0; i < NR_INODE; i++, inode++) {
         wait_on_inode(inode);
+        // i节点已被修改且不是管道节点
         if (inode->i_dirt && !inode->i_pipe) {
             write_inode(inode);
         }
     }
 }
 
+// 目的是通过相对的块偏移找到真实数据所在绝对逻辑块号
 static int _bmap(struct m_inode * inode, int block, int create) {
     struct buffer_head *bh;
     int i;
@@ -300,16 +302,21 @@ static void write_inode(struct m_inode * inode) {
         unlock_inode(inode);
         return;
     }
+    // 不可能没有注册超级块
     if (!(sb = get_super(inode->i_dev))) {
         panic("trying to write inode without device");
     }
+    /* 该i节点所在逻辑块号 = 
+    （启动块 + 超级块）+ i节点位图块数 + 逻辑块位图块数 + （i节点号 - 1）/每块含有的i节点数 */
     block = 2 + sb->s_imap_blocks + sb->s_zmap_blocks
         + (inode->i_num - 1) / INODES_PER_BLOCK;
     if (!(bh = bread(inode->i_dev, block))) {
         panic("unable to read i-node block");
     }
+    // 注意这里是模除，取的是该inode在这一个块中的偏移
     ((struct d_inode *)bh->b_data)[(inode->i_num - 1) % INODES_PER_BLOCK]
         = *(struct d_inode *)inode;
+    // 只是修改了bh缓冲区，所以置位，inode已经与缓冲区一致所以清位
     bh->b_dirt = 1;
     inode->i_dirt = 0;
 

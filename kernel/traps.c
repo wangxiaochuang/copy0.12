@@ -84,8 +84,7 @@ void do_int3(long * esp, long error_code,
 		long fs, long es, long ds,
 		long ebp, long esi, long edi,
 		long edx, long ecx, long ebx, long eax)
-{
-}
+{}
 
 void do_nmi(long esp, long error_code)
 {

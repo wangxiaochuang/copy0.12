@@ -30,4 +30,11 @@ typedef unsigned char cc_t;
 typedef unsigned int speed_t;
 typedef unsigned long tcflag_t;
 
+struct ustat {
+	daddr_t f_tfree;	/* 系统总空闲块数 */
+	ino_t f_tinode;		/* 总空闲i节点数 */
+	char f_fname[6];	/* 文件系统名称 */
+	char f_fpack[6];	/* 文件系统压缩名称 */
+};
+
 #endif

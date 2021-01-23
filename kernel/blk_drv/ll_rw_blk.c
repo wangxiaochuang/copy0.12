@@ -44,6 +44,7 @@ static void add_request(struct blk_dev_struct * dev, struct request * req) {
     if (!(tmp = dev->current_request)) {
         dev->current_request = req;
         sti();
+        // 既然队列没有请求存在，就直接处理，毕竟当前进程就是为了读数据
         (dev->request_fn)();
         return;
     }
@@ -90,19 +91,22 @@ repeat:
     while (--req >= request)
         if (req->dev < 0)
             break;
+    // 搜索完了都没找到空闲项
     if (req < request) {
+        // 是预读，就算了
         if (rw_ahead) {
             unlock_buffer(bh);
             return;
         }
+        // 睡了，有空叫我
         sleep_on(&wait_for_request);
         goto repeat;
     }
     req->dev = bh->b_dev;
     req->cmd = rw;
     req->errors = 0;
-    req->sector = bh->b_blocknr << 1;       // 起始扇区，1块等于2扇区
-    req->nr_sectors = 2;
+    req->sector = bh->b_blocknr << 1;       // 起始扇区，1块等于2扇区，底层请求函数时按扇区计数的
+    req->nr_sectors = 2;                    // 要求每次读两块
     req->buffer = bh->b_data;
     req->waiting = NULL;
     req->bh = bh;

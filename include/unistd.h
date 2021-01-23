@@ -25,6 +25,12 @@
 #define NULL    ((void *)0)     /* 定义空指针 */
 #endif
 
+/* lseek */ 		/* 文件指针重定位 */
+// 以下符号常数用于 lseek() 和 fcntl() 函数。
+#define SEEK_SET	0	/* 将文件读写指针设置为偏移值 */
+#define SEEK_CUR	1	/* 将文件读写指针设置为当前值加上偏移值 */
+#define SEEK_END	2	/* 将文件读写指针设置为文件长度加上偏移值 */
+
 #include <sys/stat.h>
 
 #ifdef __LIBRARY__
@@ -192,8 +198,13 @@ int dup(int fildes);
 int execve(const char * filename, char ** argv, char ** envp);
 void _exit(int status) __attribute__ ((noreturn));
 int fork(void);
+int lseek(int fildes, off_t offset, int origin);
 int open(const char * filename, int flag, ...);
 int pause(void);
+int read(int fildes, char * buf, off_t count);
+int stat(const char * filename, struct stat * stat_buf);
+int fstat(int fildes, struct stat * stat_buf);
+int ustat(dev_t dev, struct ustat * ubuf);
 int write(int fildes, const char * buf, off_t count);
 
 #endif

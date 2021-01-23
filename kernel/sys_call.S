@@ -20,6 +20,7 @@ bad_sys_call:
 reschedule:
 	pushl $ret_from_sys_call
 	jmp schedule
+
 .align 4
 system_call:
 	push %ds
@@ -36,7 +37,9 @@ system_call:
 	mov %dx,%fs
 	cmpl NR_syscalls,%eax
 	jae bad_sys_call
-	call sys_call_table(,%eax,4)
+	// int3
+	call *sys_call_table(,%eax,4)
+	// int3
 	pushl %eax
 2:
 	movl current,%eax

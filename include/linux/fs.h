@@ -3,6 +3,9 @@
 
 #include <sys/types.h>
 
+/* 判断设备是否是可以寻找定位的 */
+#define IS_SEEKABLE(x) ((x) >= 1 && (x) <= 3)
+
 #define READ 	0
 #define WRITE 	1
 #define READA 	2
@@ -165,6 +168,12 @@ extern void wait_on(struct m_inode * inode);
 
 /* 逻辑块（区段，磁盘块）位图操作。*/
 extern int bmap(struct m_inode * inode, int block);
+
+/* 获取指定路径名的i节点号 */
+extern struct m_inode * namei(const char * pathname);
+
+/* 取指定路径名的i节点，不跟随符号链接 */
+extern struct m_inode * lnamei(const char * pathname);
 
 /* 根据路径名为打开文件操作作准备 */
 extern int open_namei(const char * pathname, int flag, int mode, 
