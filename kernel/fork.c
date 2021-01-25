@@ -69,9 +69,6 @@ int copy_process(int nr, long ebp, long edi, long esi, long gs, long none,
 	::"c" (sizeof(struct task_struct)),"S" (current),"D" (p)
 	);
 
-    // printk("pid: %d, counter: %d, priority: %d, sizeof: %d\n", (*current).pid, (*current).counter, (*current).priority, sizeof(*current));
-    // printk("pid: %d, counter: %d, priority: %d, sizeof: %d", p->pid, p->counter, p->priority, sizeof(*p));
-
     /* 对复制来的进程结构内容进行一些修改。先将新进程的状态置为不可中断等待状态，以防止内核调度其执行 */
     p->state = TASK_UNINTERRUPTIBLE;
     p->pid = last_pid;
@@ -106,18 +103,15 @@ int copy_process(int nr, long ebp, long edi, long esi, long gs, long none,
     p->tss.ldt = _LDT(nr);
     p->tss.trace_bitmap = 0x80000000;
     /* 当前任务使用了协处理器，就保存其上下文 */
-    /*
     if (last_task_used_math == current) {
         __asm__("clts ; fnsave %0 ; frstor %0"::"m" (p->tss.i387));
     }
-    */
     /* 复制父进程的内存页表，没有分配物理内存，共享父进程内存 */
     if (copy_mem(nr,p)) {
         task[nr] = NULL;
         free_page((long) p);
         return -EAGAIN;
     }
-    /*
     for (i = 0; i < NR_OPEN; i++) {
         if ((f = p->filp[i])) {
             f->f_count ++;
@@ -135,7 +129,6 @@ int copy_process(int nr, long ebp, long edi, long esi, long gs, long none,
     if (current->library) {
         current->library->i_count++;
     }
-    */
 
     /* 在GDT表中设置任务状态段描述符TSS和局部表描述符LDT */
     set_tss_desc(gdt+(nr<<1)+FIRST_TSS_ENTRY, &(p->tss));

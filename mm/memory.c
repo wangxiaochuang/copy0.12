@@ -53,8 +53,7 @@ int free_page_tables(unsigned long from, unsigned long size)
 				if (1 & *pg_table) {	/* 在物理内存中  */
 					free_page(0xfffff000 & *pg_table);
 				} else {				/* 在交换设备中 */
-					// swap_free(*pg_table >> 1);
-                    panic("in swap");
+					swap_free(*pg_table >> 1);
 				}
 				*pg_table = 0;
 			}
@@ -105,8 +104,15 @@ int copy_page_tables(unsigned long from, unsigned long to, long size) {
 				continue;
 			}
 			/* 该页面在交换设备中，申请一页新的内存，然后将交换设备中的数据读取到该页面中 */
+			// 页面是有的，但是不存在，说明在交换分区
 			if (!(1 & this_page)) {
-                panic("in swap");
+				if (!(new_page = get_free_page())) {
+					return -1;
+				}
+				read_swap_page(this_page >> 1, (char *) new_page);
+				*to_page_table = this_page;
+				*from_page_table = new_page | (PAGE_DIRTY | 7);
+				continue;
 			}
 			this_page &= ~2;	/* 让页表项对应的内存页面只读 */
 			*to_page_table = this_page;
@@ -178,7 +184,7 @@ void do_no_page(unsigned long error_code, unsigned long address) {
 
 	if (address - current->start_code > TASK_SIZE) {
 		printk("Bad things happen: nonexistent page error in do_no_page\n\r");
-		// do_exit(SIGSEGV);
+		do_exit(SIGSEGV);
 	}
 	page = *(unsigned long *) ((address >> 20) & 0xffc);
 	if (page & 1) {

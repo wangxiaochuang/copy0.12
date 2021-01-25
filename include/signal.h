@@ -29,6 +29,19 @@ typedef unsigned int sigset_t;
 #define SIGTTIN		21				/* TTY In	-- 后台进程请求输入 */
 #define SIGTTOU		22				/* TTY Out	-- 后台进程请求输出 */
 
+#define SA_NOCLDSTOP	1			/* 当子进程处于停止状态，就不对SIGCHLD处理 */
+#define SA_INTERRUPT	0x20000000	/* 系统调用被信号中断后不重新启动系统调用 */
+#define SA_NOMASK		0x40000000	/* 不阻止在指定的信号处理程序中再收到该信号 */
+#define SA_ONESHOT		0x80000000 /* 信号句柄一旦被调用过就恢复到默认处理句柄 */
+
+#define SIG_BLOCK          0	/* for blocking signals */ /* 在阻塞信号集中加上给定信号 */
+#define SIG_UNBLOCK        1	/* for unblocking signals */ /* 从阻塞信号集中删除指定信号 */
+#define SIG_SETMASK        2	/* for setting the signal mask */ /* 设置阻塞信号集 */
+
+#define SIG_DFL		((void (*)(int))0)	/* default signal handling */	/* 默认信号处理程序（信号句柄） */
+#define SIG_IGN		((void (*)(int))1)	/* ignore signal */	/* 忽略信号的处理程序 */
+#define SIG_ERR		((void (*)(int))-1)	/* error return from signal */	/* 信号处理返回错误 */
+
 struct sigaction {
 	void (*sa_handler)(int);	/* 对应某信号指定要采取的行动 */
 	sigset_t sa_mask;			/* 对信号的屏蔽码，在信号程序执行时将阻塞对这些信号的处理 */

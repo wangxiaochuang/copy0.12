@@ -13,6 +13,8 @@ extern int SWAP_DEV;
 extern unsigned long get_free_page(void);
 extern void free_page(unsigned long addr);
 extern void init_swapping(void);
+void swap_free(int page_nr);
+void swap_in(unsigned long *table_ptr);
 
 static inline void oom(void) {
 	printk("out of memory\n\r");
@@ -30,5 +32,11 @@ extern unsigned long HIGH_MEMORY;
 #define USED 100
 
 extern unsigned char mem_map [ PAGING_PAGES ];
+
+#define PAGE_DIRTY		0x40		/* 脏位 */
+#define PAGE_ACCESSED	0x20		/* 已访问位 */
+#define PAGE_USER		0x04		/* 用户/超级用户位 */
+#define PAGE_RW			0x02		/* 页面读写位 */
+#define PAGE_PRESENT	0x01		/* 页面存在位 */
 
 #endif

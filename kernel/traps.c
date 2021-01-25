@@ -172,7 +172,7 @@ void trap_init(void)
         set_trap_gate(i, &reserved);
     }
     // set_trap_gate(45, &irq13);
-    outb_p(inb_p(0x21)&0xfb, 0x21);
-    outb(inb_p(0xA1)&0xdf, 0xA1);
+    outb_p(inb_p(0x21)&0xfb, 0x21);			// 允许8259A主芯片IRQ2中断请求（连接从芯片）
+    // outb(inb_p(0xA1)&0xdf, 0xA1);			// 允许8259A从芯片的IRQ13中断请求（协处理器中断）
     // set_trap_gate(39, &parallel_interrupt);
 }

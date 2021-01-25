@@ -59,16 +59,16 @@ ret_from_sys_call:
 	movl blocked(%eax),%ecx
 	notl %ecx
 	andl %ebx,%ecx
-	bsfl %ecx,%ecx
+	bsfl %ecx,%ecx			# 从位0顺序扫描到位31，将遇到的第一个含1的位保存到ecx
 	je 3f
-	btrl %ecx,%ebx
+	btrl %ecx,%ebx			# 马上得到处理，将singal即将被处理的位复位
 	movl %ebx,signal(%eax)
-	incl %ecx
+	incl %ecx				# 将信号调整为1开始的数（即1-32）
 	pushl %ecx
 	call do_signal
-	popl %ecx
-	// testl %eax, %eax
-	// jne 2b		# see if we need to switch tasks, or do more signals
+	popl %ecx				
+	testl %eax, %eax
+	jne 2b					# 如果信号处理函数的返回值不为0就调整到标号2
 3:	popl %eax
 	popl %ebx
 	popl %ecx
@@ -95,6 +95,7 @@ timer_interrupt:
 	movl $0x17,%eax
 	mov %ax,%fs
 	incl jiffies
+	# 由于初始化中断控制芯片时没有采用自动 EOI，所以这里需要发指令结束该硬件中断。
 	movb $0x20,%al		# EOI to interrupt controller #1
 	outb %al,$0x20
 	movl CS(%esp),%eax
@@ -116,7 +117,7 @@ sys_execve:
 sys_fork:
 	call find_empty_process
 	testl %eax,%eax
-	js 1f
+	js 1f					// eax为负数说明没找到，就跳转
 	push %gs
 	pushl %esi
 	pushl %edi

@@ -198,6 +198,13 @@ extern int in_group_p(gid_t grp);
 #define ltr(n) __asm__("ltr %%ax"::"a" (_TSS(n)))
 #define lldt(n) __asm__("lldt %%ax"::"a" (_LDT(n)))
 
+/**
+ * __tmp 是一个选择符，所以是8个字节
+ * __tmp + 0: long 未定义
+ * __tmp + 4: word 新任务选择符
+ * __tmp + 6: word 未定义
+ * 长跳转到新任务的选择符，会忽略未定义部分
+ **/
 #define switch_to(n) {							\
 struct {long a,b;} __tmp; 						\
 __asm__("cmpl %%ecx,current\n\t"			 	\

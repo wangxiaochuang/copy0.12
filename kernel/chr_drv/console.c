@@ -868,6 +868,11 @@ void update_screen(void) {
 
 int beepcount = 0;
 
+void sysbeepstop(void) {
+	/* disable counter 2 */
+	outb(inb_p(0x61)&0xFC, 0x61);
+}
+
 static void sysbeep(void) {
 	/* enable counter 2 */
 	outb_p(inb_p(0x61)|3, 0x61);
@@ -884,6 +889,16 @@ static inline unsigned char new_get_fs_byte(const char * addr) {
 	unsigned register char _v;
 	__asm__ ("movb %%fs:%1,%0":"=r" (_v):"m" (*addr));
 	return _v;
+}
+
+void blank_screen() {
+	if (video_type != VIDEO_TYPE_EGAC && video_type != VIDEO_TYPE_EGAM)
+		return;
+}
+
+void unblank_screen() {
+	if (video_type != VIDEO_TYPE_EGAC && video_type != VIDEO_TYPE_EGAM)
+		return;
 }
 
 void console_print(const char *b) {
