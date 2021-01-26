@@ -10,7 +10,7 @@ blocked = (33*16)
 ENOSYS = 38
 
 .globl system_call, timer_interrupt, sys_fork, sys_execve
-.globl hd_interrupt
+.globl hd_interrupt, sys_unimpl
 
 .align 4
 bad_sys_call:
@@ -113,6 +113,17 @@ sys_execve:
 	addl $4,%esp
 	ret
 
+.align 4
+sys_unimpl:
+	movl $0x10,%edx		# set up ds,es to kernel space
+	mov %dx,%ds
+	mov %dx,%es
+	movl $0x17,%edx		# fs points to local data space
+	mov %dx,%fs
+	pushl %eax
+	call unimpl
+	addl $4, %esp
+	ret
 .align 4
 sys_fork:
 	call find_empty_process

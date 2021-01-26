@@ -5,6 +5,36 @@
 #include <signal.h>
 #include <errno.h>
 
+int sys_sgetmask() {
+	return current->blocked;
+}
+
+int sys_ssetmask(int newmask) {
+	int old = current->blocked;
+	current->blocked = newmask & ~(1<<(SIGKILL-1)) & ~(1<<(SIGSTOP-1));
+	return old;
+}
+
+// 检测并取得进程收到的但被屏蔽的信号，还没处理的信号位图放入set中
+int sys_sigpending(sigset_t *set) {
+	verify_area(set, 4);
+	put_fs_long(current->blocked & current->signal, (unsigned long *) set);
+	return 0;
+}
+
+int sys_sigsuspend(int restart, unsigned long old_mask, unsigned long set) {
+	extern int sys_pause(void);
+	if (restart) {
+		current->blocked = old_mask;
+		return -EINTR;
+	}
+	*(&restart) = 0;
+	*(&old_mask) = current->blocked;
+	current->blocked = set;
+	(void) sys_pause();
+	return -ERESTARTNOINTR;
+}
+
 static inline void save_old(char * from, char * to) {
 	int i;
 

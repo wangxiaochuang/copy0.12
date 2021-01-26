@@ -111,6 +111,7 @@ int copy_page_tables(unsigned long from, unsigned long to, long size) {
 				}
 				read_swap_page(this_page >> 1, (char *) new_page);
 				*to_page_table = this_page;
+				// 源页表项内容指向新申请的内存页，并设置为脏页
 				*from_page_table = new_page | (PAGE_DIRTY | 7);
 				continue;
 			}
@@ -163,48 +164,6 @@ static unsigned long put_page(unsigned long page, unsigned long address)
 	return page;
 }
 
-void get_empty_page(unsigned long address)
-{
-	unsigned long tmp;
-
-	/* 若不能取得一空闲页面，或者不能将所取页面放置到指定地址处，则显示内存不够的信息 */
-	if (!(tmp = get_free_page()) || !put_page(tmp, address)) {
-		free_page(tmp);		/* 0 is ok - ignored */
-		oom();
-	}
-}
-
-void do_no_page(unsigned long error_code, unsigned long address) {
-	unsigned long tmp;
-	unsigned long page;
-	struct m_inode * inode;
-	
-	if (address < TASK_SIZE)
-		printk("\n\rBAD!! KERNEL PAGE MISSING\n\r");
-
-	if (address - current->start_code > TASK_SIZE) {
-		printk("Bad things happen: nonexistent page error in do_no_page\n\r");
-		do_exit(SIGSEGV);
-	}
-	page = *(unsigned long *) ((address >> 20) & 0xffc);
-	if (page & 1) {
-		page &= 0xfffff000;
-		page += (address >> 10) & 0xffc;
-		tmp = *(unsigned long *) page;
-		if (tmp && !(1 & tmp)) {
-			printk(".... 0x%08x\n\r", address);
-			panic("in memory.....");
-		}
-	}
-	address &= 0xfffff000;
-	tmp = address - current->start_code;
-	inode = current->executable;
-	if (!inode) {
-		get_empty_page(address);
-		return;
-	}
-	return;
-}
 
 void un_wp_page(unsigned long * table_entry) {
 	unsigned long old_page, new_page;
@@ -222,7 +181,6 @@ void un_wp_page(unsigned long * table_entry) {
 	if (old_page >= LOW_MEM)
 		mem_map[MAP_NR(old_page)]--;
 	copy_page(old_page, new_page);
-	// panic("do_wp_page: 0x%08x\n", address);
 	*table_entry = new_page | 7;
 	invalidate();
 }
@@ -232,8 +190,7 @@ void do_wp_page(unsigned long error_code, unsigned long address) {
 		printk("\n\rBAD! KERNEL MEMORY WP-ERR!\n\r");
 	if (address - current->start_code > TASK_SIZE) {
 		printk("Bad things happen: page error in do_wp_page\n\r");
-		// do_exit(SIGSEGV);
-		panic("error in do_wp_page");
+		do_exit(SIGSEGV);
 	}
 	un_wp_page((unsigned long *)
 		(((address >> 10) & 0xffc) + (0xfffff000 &
@@ -256,6 +213,156 @@ void write_verify(unsigned long address) {
 		un_wp_page((unsigned long *) page);
 	}
 	return;
+}
+
+void get_empty_page(unsigned long address)
+{
+	unsigned long tmp;
+
+	/* 若不能取得一空闲页面，或者不能将所取页面放置到指定地址处，则显示内存不够的信息 */
+	if (!(tmp = get_free_page()) || !put_page(tmp, address)) {
+		free_page(tmp);		/* 0 is ok - ignored */
+		oom();
+	}
+}
+
+static int try_to_share(unsigned long address, struct task_struct * p) {
+	unsigned long from;
+	unsigned long to;
+	unsigned long from_page;
+	unsigned long to_page;
+	unsigned long phys_addr;
+
+	// 目录项偏移加目录项
+	from_page = to_page = ((address >> 20) & 0xffc);
+	from_page += ((p->start_code >> 20) & 0xffc);
+	to_page += ((current->start_code >> 20) & 0xffc);
+	from = *(unsigned long *) from_page;
+	if (!(from & 1))
+		return 0;
+	from &= 0xfffff000;
+	from_page = from + ((address >> 10) & 0xffc);
+	phys_addr = *(unsigned long *) from_page;
+
+	// 物理页面干净且存在
+	if ((phys_addr & 0x41) != 0x01)
+		return 0;
+	phys_addr &= 0xfffff000;			/* 物理页面地址 */
+	if (phys_addr >= HIGH_MEMORY || phys_addr < LOW_MEM)
+		return 0;
+	// 当前进程目录项内容
+	to = *(unsigned long *) to_page;
+	if (!(to & 1)) {
+		if ((to = get_free_page())) {
+			*(unsigned long *) to_page = to | 7;
+		} else {
+			oom();
+		}
+	}
+	to &= 0xfffff000;
+	to_page = to + ((address >> 10) & 0xffc);
+	if (1 & *(unsigned long *) to_page)
+		panic("try_to_share: to_page already exists");
+	// 共享保护
+	*(unsigned long *) from_page &= ~2;
+	*(unsigned long *) to_page = *(unsigned long *) from_page;
+
+	invalidate();
+	phys_addr -= LOW_MEM;
+	phys_addr >>= 12;
+	mem_map[phys_addr]++;
+	return 1;
+}
+static int share_page(struct m_inode * inode, unsigned long address) {
+	struct task_struct **p;
+	// 如果i节点引用计数值等于1或i节点指针为空，表示当前系统中只有1个进程在运行该执行文件
+	if (inode->i_count < 2 || !inode)
+		return 0;
+	for (p = &LAST_TASK; p > &FIRST_TASK; --p) {
+		if (!*p)
+			continue;
+		if (current == *p)
+			continue;
+		if (address < LIBRARY_OFFSET) {
+			if (inode != (*p)->executable)
+				continue;
+		} else {
+			if (inode != (*p)->library)
+				continue;
+		}
+		if (try_to_share(address, *p))
+			return 1;
+	}
+	return 0;
+}
+
+
+void do_no_page(unsigned long error_code, unsigned long address) {
+	int nr[4];
+	unsigned long tmp;
+	unsigned long page;
+	int block, i;
+	struct m_inode * inode;
+	
+	if (address < TASK_SIZE)
+		printk("\n\rBAD!! KERNEL PAGE MISSING\n\r");
+
+	if (address - current->start_code > TASK_SIZE) {
+		printk("Bad things happen: nonexistent page error in do_no_page\n\r");
+		do_exit(SIGSEGV);
+	}
+	page = *(unsigned long *) ((address >> 20) & 0xffc);
+	if (page & 1) {
+		page &= 0xfffff000;
+		page += (address >> 10) & 0xffc;
+		tmp = *(unsigned long *) page;
+		if (tmp && !(1 & tmp)) {
+			swap_in((unsigned long *) page);
+			return;
+		}
+	}
+	address &= 0xfffff000;
+	// 计算出缺页的地址在进程空间中的偏移长度，方便根据偏移值判定缺页所在进程空间位置，获取i节点和块号
+	tmp = address - current->start_code;
+	if (tmp >= LIBRARY_OFFSET) {			// 缺页在库映像文件中
+		inode = current->library;
+		block = 1 + (tmp - LIBRARY_OFFSET) / BLOCK_SIZE;
+	} else if (tmp < current->end_data) {	// 缺页在执行映像文件中
+		inode = current->executable;
+		block = 1 + tmp / BLOCK_SIZE;
+	} else {
+		inode = NULL;
+		block = 0;
+	}
+
+	if (!inode) {
+		get_empty_page(address);
+		return;
+	}
+
+	// 共享成功直接返回
+	if (share_page(inode, tmp))
+		return;
+
+	if (!(page = get_free_page()))
+		oom();
+	for (i = 0; i < 4; block++, i++)
+		nr[i] = bmap(inode, block);
+	bread_page(page, inode->i_dev, nr);
+
+	// 读取执行程序最后一页，超出end_data部分清零，若离执行程序末端超过1页，说明从库文件读取，因此不清零
+	i = tmp + 4096 - current->end_data;
+	if (i > 4095)
+		i = 0;
+	tmp = page + 4096;
+	while (i-- > 0) {
+		tmp--;
+		*(char *)tmp = 0;
+	}
+	if (put_page(page, address))
+		return;
+	free_page(page);
+	oom();
 }
 
 /**

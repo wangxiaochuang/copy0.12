@@ -4,6 +4,7 @@
 #define PAGE_SIZE 4096
 
 #include <linux/kernel.h>
+#include <signal.h>
 
 extern int SWAP_DEV;
 
@@ -18,7 +19,7 @@ void swap_in(unsigned long *table_ptr);
 
 static inline void oom(void) {
 	printk("out of memory\n\r");
-	while(1) { printk("out of memory"); };
+	do_exit(SIGSEGV);
 }
 
 #define invalidate() __asm__("movl %%eax,%%cr3"::"a" (0))

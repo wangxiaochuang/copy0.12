@@ -57,6 +57,33 @@ void swap_free(int swap_nr) {
     return;
 }
 
+void swap_in(unsigned long *table_ptr) {
+    int swap_nr;
+    unsigned long page;
+
+    if (!swap_bitmap) {
+        printk("Trying to swap in without swap bit-map");
+        return;
+    }
+    if (1 & *table_ptr) {
+        printk("trying to swap in present page\n\r");
+        return;
+    }
+    swap_nr = *table_ptr >> 1;
+    if (!swap_nr) {
+        printk("No swap page in swap_in\n\r");
+        return;
+    }
+    if (!(page = get_free_page())) {
+        oom();
+    }
+    read_swap_page(swap_nr, (char *) page);
+    if (setbit(swap_bitmap, swap_nr)) {
+        printk("swapping in multiply from same page\n\r");
+    }
+    *table_ptr = page | (PAGE_DIRTY | 7);
+}
+
 // 尝试交换这一页
 int try_to_swap_out(unsigned long *table_ptr) {
     unsigned long page;

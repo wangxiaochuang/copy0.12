@@ -220,6 +220,42 @@ struct buffer_head *bread(int dev, int block) {
     return NULL;
 }
 
+#define COPYBLK(from, to) 								\
+__asm__(												\
+	"cld\n\t" 											\
+	"rep\n\t" 											\
+	"movsl\n\t" 										\
+	:													\
+	:"c" (BLOCK_SIZE/4),"S" (from),"D" (to) 			\
+	)
+
+void bread_page(unsigned long address, int dev, int b[4]) {
+    struct buffer_head *bh[4];
+    int i;
+
+    for (i = 0; i < 4; i++) {
+        if (b[i]) {
+            if ((bh[i] = getblk(dev, b[i]))) {
+                // 如果缓冲区数据还未更新，就产生读请求
+                if (!bh[i]->b_uptodate) {
+                    ll_rw_block(READ, bh[i]);
+                }
+            }
+        } else {
+            bh[i] = NULL;
+        }
+    }
+    for (i = 0; i < 4; i++, address += BLOCK_SIZE) {
+        if (bh[i]) {
+            wait_on_buffer(bh[i]);
+            if (bh[i]->b_uptodate) {
+                COPYBLK((unsigned long) bh[i]->b_data, address);
+            }
+            brelse(bh[i]);
+        }
+    }
+}
+
 void buffer_init(long buffer_end) {
     struct buffer_head *h = start_buffer;
     void *b;

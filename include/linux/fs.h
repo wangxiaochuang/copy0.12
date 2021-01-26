@@ -196,6 +196,9 @@ extern void brelse(struct buffer_head * buf);
 
 extern struct buffer_head * bread(int dev, int block);
 
+/* 读取设备上一个页面(4个缓冲块)的内容到指定内存地址处 */
+extern void bread_page(unsigned long addr, int dev, int b[4]);
+
 /* 释放一个i节点 */
 extern void free_inode(struct m_inode * inode);
 

@@ -5,6 +5,13 @@
 int sys_pause(void);
 int sys_close(int fd);
 
+int unimpl(int nr) {
+	panic("unimpl syscall %d", nr);
+}
+
+/**
+ * priv: 强制发送信号的标志（即不需要考虑进程用户属性或级别）
+ **/
 static inline int send_sig(long sig, struct task_struct * p,int priv) {		
 	if (!p)
 		return -EINVAL;
@@ -14,17 +21,21 @@ static inline int send_sig(long sig, struct task_struct * p,int priv) {
 		if (p->state == TASK_STOPPED)
 			p->state = TASK_RUNNING;
 		p->exit_code = 0;
+		// 复位会导致进程停止的信号
 		p->signal &= ~( (1<<(SIGSTOP-1)) | (1<<(SIGTSTP-1)) |
 				(1<<(SIGTTIN-1)) | (1<<(SIGTTOU-1)) );
 	}
+	// 发送的信号是被忽略的，就不用发送了
 	if ((int) p->sigaction[sig-1].sa_handler == 1)
 		return 0;
+	// 如果是让进程停止的信号，说明是让接受信号的进程p停止运行，因此需要复位继续运行的信号
 	if ((sig >= SIGSTOP) && (sig <= SIGTTOU)) 
 		p->signal &= ~(1<<(SIGCONT-1));
 	p->signal |= (1 << (sig - 1));
 	return 0;
 }
 
+// 给进程组号是pgrp的进程发送信号，如果遇到错误，值会返回最后一个错误
 int kill_pg(int pgrp, int sig, int priv) {
 	struct task_struct **p;
 	int err,retval = -ESRCH;
@@ -53,22 +64,25 @@ int kill_proc(int pid, int sig, int priv) {
 	return(-ESRCH);
 }
 
-int sys_kill(int pid,int sig) {
+int sys_kill(int pid, int sig) {
 	struct task_struct **p = NR_TASKS + task;
 	int err, retval = 0;
 
+	// pid为0，表示当前进程是进程组组长，因此需要给组内所有进程强制发送信号sig
 	if (!pid)
-		return(kill_pg(current->pid,sig,0));
+		return(kill_pg(current->pid, sig, 0));
+	// pid为-1，表示信号要发送给除1号进程外的所有进程，如果发生错误，只会记录最后一个错误
 	if (pid == -1) {
 		while (--p > &FIRST_TASK)
-			if ((err = send_sig(sig,*p,0)))
+			if ((err = send_sig(sig, *p, 0)))
 				retval = err;
 		return(retval);
 	}
+	// pid < -1，表示信号要发送给进程组号为-pid的所有进程
 	if (pid < 0) 
-		return(kill_pg(-pid,sig,0));
+		return(kill_pg(-pid, sig, 0));
 	/* Normal kill */
-	return(kill_proc(pid,sig,0));
+	return(kill_proc(pid, sig, 0));
 }
 
 int is_orphaned_pgrp(int pgrp) {
