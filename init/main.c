@@ -140,14 +140,14 @@ void init(void) {
     (void) dup(0);
     (void) dup(0);
     
-    printf("this is from printf function\n\n");
+    // printf("this is from printf function\n\n");
     if (!(pid = fork())) {
         close(0);
         if (open("/etc/rc", O_RDONLY, 0)) {
             panic("open /etc/rc failed...");
 			_exit(1);
 		}
-        list_file("/usr/local");
+        // list_file("/usr/local");
         execve("/bin/sh", argv_rc, envp_rc);
 		_exit(2);
     }

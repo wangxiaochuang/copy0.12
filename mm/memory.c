@@ -164,6 +164,25 @@ static unsigned long put_page(unsigned long page, unsigned long address)
 	return page;
 }
 
+unsigned long put_dirty_page(unsigned long page, unsigned long address) {
+	unsigned long tmp, *page_table;
+
+	if (page < LOW_MEM || page >= HIGH_MEMORY)
+		printk("Trying to put page %p at %p\n", page, address);
+	if (mem_map[(page-LOW_MEM)>>12] != 1)
+		printk("mem_map disagrees with %p at %p\n", page, address);
+	page_table = (unsigned long *) ((address >> 20) & 0xffc);
+	if ((*page_table) & 1)
+		page_table = (unsigned long *) (0xfffff000 & *page_table);
+	else {
+		if (!(tmp = get_free_page()))
+			return 0;
+		*page_table = tmp | 7;
+		page_table = (unsigned long *) tmp;
+	}
+	page_table[(address >> 12) & 0x3ff] = page | (PAGE_DIRTY | 7);
+	return page;
+}
 
 void un_wp_page(unsigned long * table_entry) {
 	unsigned long old_page, new_page;

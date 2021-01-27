@@ -200,6 +200,12 @@ extern int in_group_p(gid_t grp);
 
 #define ltr(n) __asm__("ltr %%ax"::"a" (_TSS(n)))
 #define lldt(n) __asm__("lldt %%ax"::"a" (_LDT(n)))
+#define str(n) 				\
+__asm__("str %%ax\n\t" 		\
+	"subl %2,%%eax\n\t" 	\
+	"shrl $4,%%eax" 		\
+	:"=a" (n) 				\
+	:"a" (0),"i" (FIRST_TSS_ENTRY<<3))
 
 /**
  * __tmp 是一个选择符，所以是8个字节

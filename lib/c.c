@@ -72,7 +72,6 @@ static void printf(const char *fmt, ...) {
 }
 
 void list_file(const char *path) {
-    uselib("/lib/aa.so");
     int fd = open(path, O_RDONLY, 0);
     if (fd < 0) {
         printf("open dir fail");

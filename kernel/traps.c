@@ -52,10 +52,31 @@ void alignment_check(void);					// int46(kernel/asm.s)
 
 static void die(char * str, long esp_ptr, long nr)
 {
-	// long * esp = (long *) esp_ptr;
-	printk("%s: %04x\n\r",str,nr&0xffff);
+long * esp = (long *) esp_ptr;
+	int i;
+
+	printk("%s: %04x\n\r", str, nr & 0xffff);
+	// 下行打印语句显示当前调用进程的CS:EIP,EFLAGS和SS:ESP的值.
+	// (1) EIP:\t%04x:%p\n	-- esp[1]是段选择符(cs),esp[0]是eip
+	// (2) EFLAGS:\t%p	-- esp[2]是eflags
+	// (2) ESP:\t%04x:%p\n	-- esp[4]是原ss,esp[3]是原esp
+	printk("EIP:    %04x:%p\nEFLAGS:    %p\nESP:    %04x:%p\n",
+		esp[1], esp[0], esp[2], esp[4], esp[3]);
+	printk("fs: %04x\n", _fs());
 	printk("base: %p, limit: %p\n", get_base(current->ldt[1]), get_limit(0x17));
-	panic("die: %s\n\r", str);
+	if (esp[4] == 0x17) {						// 或原ss值为0x17(用户栈),则还打印出用户栈的4个长字值(16字节).
+		printk("Stack: ");
+		for (i = 0; i < 4; i++)
+			printk("%p ", get_seg_long(0x17, i + (long *)esp[3]));
+		printk("\n");
+	}
+	str(i);										// 取当前运行任务的任务号(include/linux/sched.h).
+	printk("Pid: %d, process nr: %d\n\r", current->pid, 0xffff & i);
+                        						// 进程号,任务号.
+	for(i = 0; i < 10; i++)
+		printk("%02x ", 0xff & get_seg_byte(esp[1], (i+(char *)esp[0])));
+	printk("\n\r");
+	do_exit(11);
 }
 
 /* 以下以do_开头的函数是asm.s中对应中断处理程序调用的C函数 */
