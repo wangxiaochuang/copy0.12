@@ -131,6 +131,7 @@ void main(void) {
     };
 }
 
+extern void mytest();
 void init(void) {
     char buf[512];
     int pid, i;
@@ -147,7 +148,7 @@ void init(void) {
             panic("open /etc/rc failed...");
 			_exit(1);
 		}
-        // list_file("/usr/local");
+        mytest();
         execve("/bin/sh", argv_rc, envp_rc);
 		_exit(2);
     }

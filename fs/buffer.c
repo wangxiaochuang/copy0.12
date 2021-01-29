@@ -1,3 +1,5 @@
+#include <stdarg.h>
+
 #include <linux/config.h>
 #include <linux/sched.h>
 #include <linux/kernel.h>
@@ -254,6 +256,36 @@ void bread_page(unsigned long address, int dev, int b[4]) {
             brelse(bh[i]);
         }
     }
+}
+
+struct buffer_head * breada(int dev, int first, ...) {
+    va_list args;
+    struct buffer_head *bh, *tmp;
+
+    va_start(args, first);
+    if (!(bh = getblk(dev, first))) {
+        panic("bread: getblk returned NULL\n");
+    }
+    // 找到了
+    if (!bh->b_uptodate) {
+        ll_rw_block(READ, bh);
+    }
+    while ((first = va_arg(args, int)) >= 0) {
+        tmp = getblk(dev, first);
+        if (tmp) {
+            if (!tmp->b_uptodate) {
+                ll_rw_block(READA, tmp);
+            }
+            tmp->b_count--;
+        }
+    }
+    va_end(args);
+    wait_on_buffer(bh);
+    if (bh->b_uptodate) {
+        return bh;
+    }
+    brelse(bh);
+    return NULL;
 }
 
 void buffer_init(long buffer_end) {

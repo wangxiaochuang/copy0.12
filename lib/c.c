@@ -17,6 +17,8 @@ _syscall2(int, ustat, dev_t, dev, struct ustat *, ubuf)
 _syscall2(int, lstat, const char *, filename, struct stat *, stat_buf)
 _syscall1(int, uselib, const char *, filename)
 
+
+#ifdef __C__SIGNAL
 typedef void __sighandler_t(int);
 extern void ___sig_restore();
 extern void ___masksig_restore();
@@ -57,6 +59,11 @@ int sigsuspend(sigset_t *sigmask) {
     errno = -res;
     return -1;
 }
+#else
+sigset_t ___ssetmask(sigset_t mask) {
+    return 0;
+}
+#endif
 
 extern int vsprintf(char * buf, const char * fmt, va_list args);
 
@@ -71,13 +78,13 @@ static void printf(const char *fmt, ...) {
 	va_end(args);
 }
 
-void list_file(const char *path) {
+static void list_dir(const char *path) {
     int fd = open(path, O_RDONLY, 0);
     if (fd < 0) {
         printf("open dir fail");
         return;
     }
-    struct dir_entry *ptr;
+    /*
     struct stat statbuf;
     int ret = fstat(fd, &statbuf);
     if (ret) {
@@ -97,7 +104,9 @@ void list_file(const char *path) {
         return;
     }
     printf("from lstat \t => size: %d\n", statbuf.st_size);
+    */
     char buf[DIRLEN];
+    struct dir_entry *ptr;
     int size = 0;
     int loc = 0;
     while (1) {
@@ -117,4 +126,27 @@ void list_file(const char *path) {
         printf("%s ", ptr->name);
     }
     return;
+}
+
+static void cat(const char *path) {
+    int fd = open(path, O_RDONLY, 0);
+    if (fd < 0) {
+        printf("cat file fail");
+        return;
+    }
+    char buf[128];
+    int size;
+    while (1) {
+        size = read(fd, buf, 128);
+        if (size <= 0) {
+            return;
+        }
+        write(1, buf, 128);
+    }
+}
+
+void mytest() {
+    list_dir("/etc");
+    // cat("/etc/rc");
+    for(;;);
 }

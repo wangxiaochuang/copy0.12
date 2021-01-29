@@ -206,6 +206,23 @@ struct m_inode * get_empty_inode(void) {
     return inode;
 }
 
+struct m_inode * get_pipe_inode(void) {
+    struct m_inode *inode;
+
+    if (!(inode = get_empty_inode())) {
+        return NULL;
+    }
+    // i_size 指向缓冲区
+    if (!(inode->i_size = get_free_page())) {
+        inode->i_count = 0;
+        return NULL;
+    }
+    inode->i_count = 2;     // 管道读写指针都会指向这个inode
+    PIPE_HEAD(*inode) = PIPE_TAIL(*inode) = 0;
+    inode->i_pipe = 1;      // 将管道使用标志置位
+    return inode;
+}
+
 /**
  * 读取节点号为nr的i节点内容到内存i节点表中 
  **/
