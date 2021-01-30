@@ -402,3 +402,53 @@ void mem_init(long start_mem, long end_mem) {
         mem_map[i++] = 0;
     }
 }
+
+void show_mem(void) {
+	int i, j, k, free = 0, total = 0;
+	int shared = 0;
+	unsigned long * pg_tbl;
+
+	printk("Mem-info:\n\r");
+	for (i = 0; i < PAGING_PAGES; i++) {
+		if (mem_map[i] == USED) {
+			continue;
+		}
+		total++;
+		if (!mem_map[i]) {
+			free++;
+		} else {
+			shared += mem_map[i] - 1;
+		}
+	}
+	printk("%d free pages of %d\n\r", free, total);
+	printk("%d pages shared\n\r", shared);
+	k = 0;
+	for (i = 4; i < 1024;) {
+		if (1 & pg_dir[i]) {
+			if (pg_dir[i] > HIGH_MEMORY) {
+				printk("page directory[%d]: %08X\n\r", i, pg_dir[i]);
+				continue;
+			}
+			if (pg_dir[i] > LOW_MEM) {
+				free++, k++;
+			}
+			pg_tbl = (unsigned long *) (0xfffff000 & pg_dir[i]);
+			for (j = 0; j < 1024; j++) {
+				if ((pg_tbl[j] & 1) && pg_tbl[j] > LOW_MEM) {
+					if (pg_tbl[j] > HIGH_MEMORY) {
+						printk("page_dir[%d][%d]: %08X\n\r", i, j, pg_tbl[j]);
+					} else {
+						k++, free++;
+					}
+				}
+			}
+		}
+		i++;
+		if (!(i & 15) && k) {
+			k++, free++;
+			printk("Process %d: %d pages\n\r", (i >> 4) - 1, k);
+			k = 0;
+		}
+	}	
+	printk("Memory found: %d (%d)\n\r\n\r", free - shared, total);
+}

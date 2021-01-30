@@ -35,6 +35,22 @@ static inline void unlock_inode(struct m_inode *inode) {
 	wake_up(&inode->i_wait);
 }
 
+void invalidate_inodes(int dev) {
+    int i;
+    struct m_inode *inode;
+
+    inode = 0 + inode_table;
+    for (i = 0; i < NR_INODE; i++, inode++) {
+        wait_on_inode(inode);
+        if (inode->i_dev == dev) {
+            if (inode->i_count) {
+                printk("inode in use on removed disk\n\r");
+            }
+            inode->i_dev = inode->i_dirt = 0;
+        }
+    }
+}
+
 void sync_inodes(void) {
     int i;
     struct m_inode *inode;
@@ -61,20 +77,22 @@ static int _bmap(struct m_inode * inode, int block, int create) {
         panic("_bmap: block > big");
     }
     if (block < 7) {
+        // 指明了要创建，且对应i节点的逻辑块字段为0，则新申请
         if (create && !inode->i_zone[block]) {
-            /*
             if ((inode->i_zone[block] = new_block(inode->i_dev))) {
                 inode->i_ctime = CURRENT_TIME;
                 inode->i_dirt = 1;
             }
-            */
         }
         return inode->i_zone[block];
     }
     block -= 7;
     if (block < 512) {
         if (create && !inode->i_zone[7]) {
-            // @todo
+            if ((inode->i_zone[7] = new_block(inode->i_dev))) {
+                inode->i_dirt = 1;
+                inode->i_ctime = CURRENT_TIME;
+            }
         }
         if (!inode->i_zone[7]) {
             return 0;
@@ -82,17 +100,25 @@ static int _bmap(struct m_inode * inode, int block, int create) {
         if (!(bh = bread(inode->i_dev, inode->i_zone[7]))) {
             return 0;
         }
+        // 简洁块中第block项中的逻辑块号i，每一项占用2个字节，所以是unsigned short
         i = ((unsigned short *) (bh->b_data))[block];
+        // 说明需要创建一个逻辑块
         if (create && !i) {
-            // @todo
+            if ((i = new_block(inode->i_dev))) {
+                ((unsigned short *) (bh->b_data))[block] = i;
+                bh->b_dirt = 1;
+            }
         }
         brelse(bh);
-        return 1;
+        return i;
     }
 
     block -= 512;
     if (create && !inode->i_zone[8]) {
-        // @todo
+        if ((inode->i_zone[8] = new_block(inode->i_dev))) {
+            inode->i_dirt = 1;
+            inode->i_ctime = CURRENT_TIME;
+        }
     }
     if (!inode->i_zone[8]) {
         return 0;
@@ -100,9 +126,13 @@ static int _bmap(struct m_inode * inode, int block, int create) {
     if (!(bh = bread(inode->i_dev, inode->i_zone[8]))) {
         return 0;
     }
+    // block除以512，取该一级块上第(block/512)项中的逻辑块号i
     i = ((unsigned short *) bh->b_data)[block >> 9];
     if (create && !i) {
-        // @todo
+        if ((i = new_block(inode->i_dev))) {
+            ((unsigned short *) (bh->b_data))[block >> 9] = i;
+            bh->b_dirt = 1;
+        }
     }
     brelse(bh);
     if (!i) {
@@ -114,7 +144,10 @@ static int _bmap(struct m_inode * inode, int block, int create) {
     }
     i = ((unsigned short *)bh->b_data)[block & 511];
     if (create && !i) {
-        // @todo
+        if ((i = new_block(inode->i_dev))) {
+            ((unsigned short *) (bh->b_data))[block & 511] = i;
+            bh->b_dirt = 1;
+        }
     }
     brelse(bh);
     return i;
@@ -122,6 +155,10 @@ static int _bmap(struct m_inode * inode, int block, int create) {
 
 int bmap(struct m_inode *inode, int block) {
     return _bmap(inode, block, 0);
+}
+
+int create_block(struct m_inode * inode, int block) {
+	return _bmap(inode, block, 1);
 }
 
 void iput(struct m_inode * inode) {

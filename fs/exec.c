@@ -160,6 +160,8 @@ int do_execve(unsigned long * eip, long tmp, char * filename,
 	// eip[1]是调用本次系统调用的原用户程序的代码段寄存器CS值
     if ((0xffff & eip[1]) != 0x000f) {
 		panic("execve called from supervisor mode");
+		char buf[128], *cp, *interp, *i_name, *i_arg;
+		unsigned long old_fs;
 	}
 	// 参数最多32个页面
 	for (i = 0; i < MAX_ARG_PAGES; i++) {
@@ -265,7 +267,6 @@ restart_interp:
 	eip[0] = ex.a_entry;
 	eip[3] = p;
 	return 0;
-    panic("i am here in do_execve.........");
 
 exec_error2:
 	iput(inode);

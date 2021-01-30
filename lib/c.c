@@ -146,7 +146,19 @@ static void cat(const char *path) {
 }
 
 void mytest() {
-    list_dir("/etc");
+    // list_dir("/usr/bin");
     // cat("/etc/rc");
-    for(;;);
+    // for(;;);
+    /*
+    int fd = open("/etc/rc", O_RDWR);
+    lseek(fd, 27, SEEK_SET);
+    int res = write(fd, "6", 1);
+    printf("res: %d\n", res);
+    sync();
+    close(fd);
+    fd = open("/etc/rc", O_RDONLY);
+    char buf[64] = {0};
+    int len = read(fd, buf, 64);
+    printf("len: %d, content:\n%s", len, buf);
+    */
 }

@@ -120,6 +120,68 @@ static struct buffer_head * find_entry(struct m_inode ** dir,
     return NULL;
 }
 
+static struct buffer_head * add_entry(struct m_inode * dir,
+    const char * name, int namelen, struct dir_entry ** res_dir) {
+
+    int block,i;
+    struct buffer_head * bh;
+    struct dir_entry * de;
+
+    *res_dir = NULL;
+#ifdef NO_TRUNCATE
+    if (namelen > NAME_LEN) {
+        return NULL;
+    }
+#else
+    if (namelen > NAME_LEN) {
+        namelen = NAME_LEN;
+    }
+#endif
+    if (!namelen) {
+        return NULL;
+    }
+    if (!(block = dir->i_zone[0])) {
+        return NULL;
+    }
+    if (!(bh = bread(dir->i_dev, block))) {
+        return NULL;
+    }
+    i = 0;
+    de = (struct dir_entry *) bh->b_data;
+    while (1) {
+        if ((char *) de >= BLOCK_SIZE + bh->b_data) {
+            brelse(bh);
+            bh = NULL;
+            block = create_block(dir, i/DIR_ENTRIES_PER_BLOCK);
+            if (!block)
+                return NULL;
+            if (!(bh = bread(dir->i_dev, block))) {
+                i += DIR_ENTRIES_PER_BLOCK;
+                continue;
+            }
+            de = (struct dir_entry *) bh->b_data;
+        }
+        if (i * sizeof(struct dir_entry) >= dir->i_size) {
+            de->inode = 0;
+            dir->i_size = (i+1) * sizeof(struct dir_entry);
+            dir->i_dirt = 1;
+            dir->i_ctime = CURRENT_TIME;
+        }
+        if (!de->inode) {
+            dir->i_mtime = CURRENT_TIME;
+            for (i = 0; i < NAME_LEN; i++)
+                de->name[i] = (i < namelen) ? get_fs_byte(name + i) : 0;
+            bh->b_dirt = 1;
+            *res_dir = de;
+            return bh;
+        }
+        de++;
+        i++;
+    }
+    brelse(bh);
+    return NULL;
+}
+
 static struct m_inode * follow_link(struct m_inode * dir, struct m_inode * inode) {
     unsigned short fs;
     struct buffer_head * bh;
@@ -136,7 +198,6 @@ static struct m_inode * follow_link(struct m_inode * dir, struct m_inode * inode
         iput(dir);
         return inode;
     }
-    // @todo
     __asm__("mov %%fs,%0":"=r" (fs));
     if (fs != 0x17 || !inode->i_zone[0] ||
        !(bh = bread(inode->i_dev, inode->i_zone[0]))) {
@@ -310,7 +371,7 @@ int open_namei(const char * pathname, int flag, int mode,
     }
     bh = find_entry(&dir, basename, namelen, &de);
     if (!bh) {
-        if (!flag &O_CREAT) {
+        if (!flag & O_CREAT) {
             iput(dir);
             return -ENOENT;
         }
@@ -318,7 +379,27 @@ int open_namei(const char * pathname, int flag, int mode,
             iput(dir);
             return -EACCES;
         }
-        // @todo
+        inode = new_inode(dir->i_dev);
+        if (!inode) {
+            iput(dir);
+            return -ENOSPC;
+        }
+        inode->i_uid = current->euid;
+        inode->i_mode = mode;
+        inode->i_dirt = 1;
+        bh = add_entry(dir, basename, namelen, &de);
+        if (!bh) {
+            inode->i_nlinks--;
+            iput(inode);
+            iput(dir);
+            return -ENOSPC;
+        }
+        de->inode = inode->i_num;
+        bh->b_dirt = 1;
+        brelse(bh);
+        iput(dir);
+        *res_inode = inode;
+        return 0;
     }
     inr = de->inode;
     dev = dir->i_dev;

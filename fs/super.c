@@ -57,6 +57,33 @@ struct super_block * get_super(int dev) {
     return NULL;
 }
 
+void put_super(int dev) {
+    struct super_block *sb;
+    int i;
+
+    if (dev == ROOT_DEV) {
+        printk("root diskette changed: prepare for armageddon\n\r");
+		return;
+    }
+    if (!(sb = get_super(dev))) {
+        return;
+    }
+    if (sb->s_imount) {
+        printk("Mounted disk changed - tssk, tssk\n\r");
+		return;
+    }
+    lock_super(sb);
+    sb->s_dev = 0;
+    for (i = 0; i < I_MAP_SLOTS; i++) {
+        brelse(sb->s_imap[i]);
+    }
+    for (i = 0; i < Z_MAP_SLOTS; i++) {
+        brelse(sb->s_zmap[i]);
+    }
+    free_super(sb);
+    return;
+}
+
 static struct super_block * read_super(int dev) {
 	struct super_block * s;
 	struct buffer_head * bh;

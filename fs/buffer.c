@@ -7,7 +7,7 @@
 #include <asm/system.h>
 #include <asm/io.h>
 
-// @todo
+// 编译时的连接程序ld会生成，表示内核代码的末端
 extern int end;
 
 // struct buffer_head *start_buffer = (struct buffer_head *) (200 * 1024);
@@ -27,6 +27,22 @@ static inline void wait_on_buffer(struct buffer_head * bh) {
 		sleep_on(&bh->b_wait);
 	}
 	sti();
+}
+
+int sys_sync(void) {
+    int i;
+    struct buffer_head *bh;
+
+    sync_inodes();
+
+    bh = start_buffer;
+    for (i = 0; i < NR_BUFFERS; i++, bh++) {
+        wait_on_buffer(bh);
+        if (bh->b_dirt) {
+            ll_rw_block(WRITE, bh);
+        }
+    }
+    return 0;
 }
 
 int sync_dev(int dev) {
@@ -55,6 +71,40 @@ int sync_dev(int dev) {
         }
     }
     return 0;
+}
+
+static inline void invalidate_buffers(int dev) {
+    int i;
+    struct buffer_head *bh;
+
+    bh = start_buffer;
+    for (i = 0; i < NR_BUFFERS; i++, bh++) {
+        if (bh->b_dev != dev) {
+            continue;
+        }
+        wait_on_buffer(bh);
+        if (bh->b_dev == dev) {
+            bh->b_uptodate = bh->b_dirt = 0;
+        }
+    }
+}
+
+void check_disk_change(int dev) {
+    int i;
+    // 只处理软盘
+    if (MAJOR(dev) != 2) {
+        return;
+    }
+    if (!floppy_change(dev & 0x03)) {
+        return;
+    }
+    for (i = 0; i < NR_SUPER; i++) {
+        if (super_block[i].s_dev == dev) {
+            put_super(super_block[i].s_dev);
+        }
+    }
+    invalidate_inodes(dev);
+	invalidate_buffers(dev);
 }
 
 #define _hashfn(dev, block) (((unsigned)(dev ^ block)) % NR_HASH)

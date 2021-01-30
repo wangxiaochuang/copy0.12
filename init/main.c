@@ -6,6 +6,7 @@
 extern inline _syscall0(int, fork)
 extern inline _syscall0(int, pause)
 extern inline _syscall1(int, setup, void *, BIOS)
+_syscall0(int, sync)
 
 #include <linux/tty.h>
 #include <linux/sched.h>
@@ -46,6 +47,11 @@ static long main_memory_start = 0;      /* 主内存开始位置 */
 
 static char * argv_rc[] = { "/bin/sh", NULL };
 static char * envp_rc[] = { "HOME=/", NULL ,NULL };
+
+/* 运行登录shell时所使用的命令行和环境参数 */
+/* argv[0]中的字符“-”是传递shell程序sh的一个标示位，通过这个标示位，sh程序会作为shell程序执行 */
+static char * argv[] = { "-/bin/sh", NULL };
+static char * envp[] = { "HOME=/usr/root", NULL, NULL };
 
 #define CMOS_READ(addr) ({		\
 	outb_p(0x80 | addr, 0x70);	\
@@ -145,12 +151,36 @@ void init(void) {
     if (!(pid = fork())) {
         close(0);
         if (open("/etc/rc", O_RDONLY, 0)) {
-            panic("open /etc/rc failed...");
 			_exit(1);
 		}
         mytest();
         execve("/bin/sh", argv_rc, envp_rc);
 		_exit(2);
     }
-    for(;;);
+    if (pid > 0) {
+        while (pid != wait(&i)) {};
+    }
+    while (1) {
+        if ((pid = fork()) < 0) {
+            printf("Fork failed in init\r\n");
+            continue;
+        }
+        if (!pid) {
+            close(0); close(1); close(2);
+            setsid();
+            (void) open("/dev/tty1", O_RDWR, 0);
+            (void) dup(0);
+            (void) dup(0);
+            _exit(execve("/bin/sh", argv, envp));
+        }
+        while (1) {
+            if (pid == wait(&i)) {
+                break;
+            }
+        }
+        printf("\n\rchild %d died with code %04x\n\r", pid, i);
+		sync();
+    }
+    panic("error error error error\n\r");
+    _exit(0);
 }

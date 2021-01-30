@@ -7,7 +7,12 @@
 #include <unistd.h>
 
 extern int rw_char(int rw,int dev, char * buf, int count, off_t * pos);
+extern int read_pipe(struct m_inode * inode, char * buf, int count);
+extern int write_pipe(struct m_inode * inode, char * buf, int count);
+extern int block_read(int dev, off_t * pos, char * buf, int count);
+extern int block_write(int dev, off_t * pos, char * buf, int count);
 extern int file_read(struct m_inode * inode, struct file * filp, char * buf, int count);
+extern int file_write(struct m_inode * inode, struct file * filp, char * buf, int count);
 
 int sys_lseek(unsigned int fd, off_t offset, int origin) {
 	struct file * file;
@@ -90,9 +95,18 @@ int sys_write(unsigned int fd, char * buf, int count) {
     }
 
     inode = file->f_inode;
+    if (inode->i_pipe) {
+        return (file->f_mode & 2) ? write_pipe(inode, buf, count) : -EIO;
+    }
     if (S_ISCHR(inode->i_mode)) {
         return rw_char(WRITE, inode->i_zone[0], buf, count, &file->f_pos);
     }
-    console_print("it is invalid type");
+    if (S_ISBLK(inode->i_mode)) {
+        return block_write(inode->i_zone[0], &file->f_pos, buf, count);
+    }
+    if (S_ISREG(inode->i_mode)) {
+        return file_write(inode, file, buf, count);
+    }
+    printk("(Write)inode->i_mode=%06o\n\r", inode->i_mode);
     return -EINVAL;
 }

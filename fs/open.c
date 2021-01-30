@@ -36,10 +36,29 @@ static int check_char_dev(struct m_inode * inode, int dev, int flag) {
 			tty->session= current->session;
 			tty->pgrp = current->pgrp;
 		}
-        // @todo
+        if (flag & O_NONBLOCK) {
+            TTY_TABLE(min)->termios.c_cc[VMIN] = 0;
+            TTY_TABLE(min)->termios.c_cc[VTIME] = 0;
+            TTY_TABLE(min)->termios.c_lflag &= ~ICANON;
+        }
     }
     return 0;
 }
+
+int sys_chdir(const char * filename) {
+    struct m_inode *inode;
+
+    if (!(inode = namei(filename)))
+        return -ENOENT;
+    if (!S_ISDIR(inode->i_mode)) {
+        iput(inode);
+        return -ENOTDIR;
+    }
+    iput(current->pwd);
+    current->pwd = inode;
+    return 0;
+}
+
 int sys_open(const char * filename, int flag, int mode) {
     struct m_inode *inode;
     struct file *f;
@@ -81,7 +100,7 @@ int sys_open(const char * filename, int flag, int mode) {
         }
     }
     if (S_ISBLK(inode->i_mode)) {
-        // @todo
+        check_disk_change(inode->i_zone[0]);
 	}
     f->f_mode = inode->i_mode;
     f->f_flags = flag;
@@ -89,6 +108,10 @@ int sys_open(const char * filename, int flag, int mode) {
     f->f_inode = inode;
     f->f_pos = 0;
     return (fd);
+}
+
+int sys_creat(const char * pathname, int mode) {
+	return sys_open(pathname, O_CREAT | O_TRUNC, mode);
 }
 
 int sys_close(unsigned int fd) {

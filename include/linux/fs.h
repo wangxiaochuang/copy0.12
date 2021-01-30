@@ -166,6 +166,13 @@ extern struct file file_table[NR_FILE];
 extern struct super_block super_block[NR_SUPER];
 extern int nr_buffers;
 
+/**** 磁盘操作函数原型 ****/
+/* 检测驱动器中软盘是否改变 */
+extern void check_disk_change(int dev);
+
+/* 检测指定软驱中软盘更换情况 */
+extern int floppy_change(unsigned int nr);
+
 /* 将i节点指定的文件截为0 */
 extern void truncate(struct m_inode * inode);
 
@@ -177,6 +184,9 @@ extern void wait_on(struct m_inode * inode);
 
 /* 逻辑块（区段，磁盘块）位图操作。*/
 extern int bmap(struct m_inode * inode, int block);
+
+/* 创建数据块block在设备上对应的逻辑块 */
+extern int create_block(struct m_inode * inode, int block);
 
 /* 获取指定路径名的i节点号 */
 extern struct m_inode * namei(const char * pathname);
@@ -197,6 +207,15 @@ extern struct m_inode * iget(int dev, int nr);
 /* 从i节点表中获取一个空闲i节点项 */
 extern struct m_inode * get_empty_inode(void);
 
+/* 获取(申请)管道节点 */
+extern struct m_inode * get_pipe_inode(void);
+
+/* 在哈希表中查找指定的数据块 */
+extern struct buffer_head * get_hash_table(int dev, int block);
+
+/* 从设备读取指定块 */
+extern struct buffer_head * getblk(int dev, int block);
+
 extern void ll_rw_block(int rw, struct buffer_head * bh);
 /* 读/写数据页面 */
 extern void ll_rw_page(int rw, int dev, int nr, char * buffer);
@@ -207,6 +226,18 @@ extern struct buffer_head * bread(int dev, int block);
 
 /* 读取设备上一个页面(4个缓冲块)的内容到指定内存地址处 */
 extern void bread_page(unsigned long addr, int dev, int b[4]);
+
+/* 读取头一个指定的数据块，并标记后续将要读的块 */
+extern struct buffer_head * breada(int dev, int block, ...);
+
+/* 向设备dev申请一个磁盘块 */
+extern int new_block(int dev);
+
+/* 释放设备数据区中的逻辑块 */
+extern int free_block(int dev, int block);
+
+/* 为设备dev建立一个新i节点 */
+extern struct m_inode * new_inode(int dev);
 
 /* 释放一个i节点 */
 extern void free_inode(struct m_inode * inode);
@@ -219,6 +250,9 @@ extern struct super_block * get_super(int dev);
 
 /* 释放指定设备的超级块 */
 extern void put_super(int dev);
+
+/* 释放设备dev在内存i节点表中的所有i节点 */
+extern void invalidate_inodes(int dev);
 
 extern int ROOT_DEV;
 

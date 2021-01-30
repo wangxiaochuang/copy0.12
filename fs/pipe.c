@@ -49,8 +49,8 @@ int write_pipe(struct m_inode * inode, char * buf, int count) {
     int chars, size, written = 0;
 
     while (count > 0) {
-        wile (!(size = (PAGE_SIZE-1) - PIPE_SIZE(*inode))) {
-            wak_up(& PIPE_READ_WAIT(*inode));
+        while (!(size = (PAGE_SIZE-1) - PIPE_SIZE(*inode))) {
+            wake_up(& PIPE_READ_WAIT(*inode));
             if (inode->i_count != 2) {
                 current->signal |= (1<<(SIGPIPE-1));
                 return written ? written : -1;
@@ -128,4 +128,16 @@ int sys_pipe(unsigned long *fildes) {
     put_fs_long(fd[0], 0 + fildes);
     put_fs_long(fd[1], 1 + fildes);
     return 0;
+}
+
+int pipe_ioctl(struct m_inode *pino, int cmd, int arg) {
+    switch (cmd) {
+        // 取管道中当前可读数据的长度
+        case FIONREAD:
+            verify_area((void *) arg, 4);
+            put_fs_long(PIPE_SIZE(*pino), (unsigned long *) arg);
+            return 0;
+        default:
+            return -EINVAL;
+    }
 }

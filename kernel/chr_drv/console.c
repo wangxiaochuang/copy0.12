@@ -36,6 +36,8 @@
 
 int NR_CONSOLES = 0;
 
+extern void keyboard_interrupt(void);
+
 static unsigned char	video_type;
 static unsigned long	video_num_columns;  /* 列数 */
 static unsigned long	video_mem_base;     /* 显存开始地址 */
@@ -853,7 +855,7 @@ void con_init(void) {
     }
     update_screen();
     register unsigned char a;
-	// set_trap_gate(0x21, &keyboard_interrupt);
+	set_trap_gate(0x21, &keyboard_interrupt);
 	outb_p(inb_p(0x21)&0xfd,0x21);  /* 取消对键盘中断的屏蔽，允许IRQ1 */
     // 读取键盘端口0x61，先禁止再允许，用以复位键盘
 	a = inb_p(0x61);

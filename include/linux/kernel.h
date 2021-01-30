@@ -5,6 +5,7 @@ void console_print(const char * str);
 int tty_write(unsigned ch,char * buf,int count);
 int printk(const char * fmt, ...);
 int dumpmem(const void *address, int len);
+int printkl(const char *str, int len);
 extern void hd_times_out(void);
 extern void sysbeepstop(void);          /* 停止蜂鸣 */
 extern void blank_screen(void);         /* 黑屏处理 */

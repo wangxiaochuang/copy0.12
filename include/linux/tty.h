@@ -65,6 +65,7 @@ extern int fg_console;
 
 #define INIT_C_CC "\003\034\177\025\004\0\1\0\021\023\032\0\022\017\027\026\0"
 
+void rs_init(void);
 void con_init(void);
 void tty_init(void);
 
@@ -72,6 +73,9 @@ int tty_read(unsigned c, char * buf, int n);
 int tty_write(unsigned c, char * buf, int n);
 
 void con_write(struct tty_struct * tty);
+void rs_write(struct tty_struct * tty);
+void mpty_write(struct tty_struct * tty);
+void spty_write(struct tty_struct * tty);
 
 void copy_to_cooked(struct tty_struct * tty);
 

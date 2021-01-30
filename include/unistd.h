@@ -205,6 +205,8 @@ int read(int fildes, char * buf, off_t count);
 int stat(const char * filename, struct stat * stat_buf);
 int fstat(int fildes, struct stat * stat_buf);
 int ustat(dev_t dev, struct ustat * ubuf);
+pid_t wait(int * wait_stat);
 int write(int fildes, const char * buf, off_t count);
+pid_t setsid(void);
 
 #endif

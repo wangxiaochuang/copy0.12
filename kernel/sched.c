@@ -11,6 +11,34 @@
 /* 除了SIGKILL和SIGSTOP信号以外其他信号都是可阻塞的 */
 #define _BLOCKABLE 	(~(_S(SIGKILL) | _S(SIGSTOP)))
 
+void show_task(int nr, struct task_struct * p) {
+	int i, j = 4096 - sizeof(struct task_struct);
+	printk("%d: pid=%d, state=%d, father=%d, child=%d, ", nr, p->pid,
+		p->state, p->p_pptr->pid, p->p_cptr ? p->p_cptr->pid : -1);
+	i = 0;
+	while (i < j && !((char *) (p + 1))[i]) {
+		i++;
+	}
+	printk("%d/%d chars free in kstack\n\r", i, j);
+	printk("   PC=%08X.", *(1019 + (unsigned long *) p));
+	if (p->p_ysptr || p->p_osptr) {
+		printk("   Younger sib=%d, older sib=%d\n\r", 
+			p->p_ysptr ? p->p_ysptr->pid : -1,
+			p->p_osptr ? p->p_osptr->pid : -1);
+	} else {
+		printk("\n\r");
+	}
+}
+void show_state(void) {
+	int i;
+	printk("\rTask-info:\n\r");
+	for (i = 0; i < NR_TASKS; i++) {
+		if (task[i]) {
+			show_task(i, task[i]);
+		}
+	}
+}
+
 #define LATCH (1193180 / HZ)
 
 extern int timer_interrupt(void);
@@ -252,6 +280,46 @@ void do_timer(long cpl) {
         return;
     }
     schedule();
+}
+
+int sys_alarm(long seconds) {
+	int old = current->alarm;
+
+	if (old) {
+		old = (old - jiffies) / HZ;
+	}
+	current->alarm = (seconds > 0) ? (jiffies + HZ * seconds) : 0;
+	return (old);
+}
+
+/* 取进程号pid */
+int sys_getpid(void) {
+	return current->pid;
+}
+
+/* 取父进程号ppid */
+int sys_getppid(void) {
+	return current->p_pptr->pid;
+}
+
+/* 取用户id */
+int sys_getuid(void) {
+	return current->uid;
+}
+
+/* 取有效用户id */
+int sys_geteuid(void) {
+	return current->euid;
+}
+
+/* 取组号gid */
+int sys_getgid(void) {
+	return current->gid;
+}
+
+/* 取有效的组号egid */
+int sys_getegid(void) {
+	return current->egid;
 }
 
 void sched_init(void) {

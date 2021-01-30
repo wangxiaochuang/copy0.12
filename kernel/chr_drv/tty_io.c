@@ -80,6 +80,21 @@ struct tty_struct tty_table[256];       // tty表终端结构数组，缓冲
 
 int fg_console = 0;
 
+struct tty_queue * table_list[] = {
+	con_queues + 0, con_queues + 1,
+	rs_queues + 0, rs_queues + 1,
+	rs_queues + 3, rs_queues + 4
+};
+
+void change_console(unsigned int new_console) {
+	if (new_console == fg_console || new_console >= NR_CONSOLES)
+		return;
+	fg_console = new_console;
+	table_list[0] = con_queues + 0 + fg_console * 3;
+	table_list[1] = con_queues + 1 + fg_console * 3;
+	update_screen();
+}
+
 static void sleep_if_empty(struct tty_queue * queue) {
 	cli();
 	while (!(current->signal & ~current->blocked) && EMPTY(queue))
@@ -206,7 +221,27 @@ void copy_to_cooked(struct tty_struct * tty)
 	wake_up(&tty->secondary->proc_list);
 }
 
+void do_tty_interrupt(int tty) {
+	copy_to_cooked(TTY_TABLE(tty));
+}
+
 void chr_dev_init(void) {}
+
+// 用于向后台进程组中的所有进程发送SIGTTIN或SIGTTOU信号
+// 无论后台进程组的进程是否已经阻塞或忽略了信号，当前进程都将立刻退出读写操作而返回
+int tty_signal(int sig, struct tty_struct *tty) {
+	// 不能停止一个孤儿进程组中的进程
+	if (is_orphaned_pgrp(current->pgrp))
+		return -EIO;
+	(void) kill_pg(current->pgrp, sig, 1);
+	if ((current->blocked & (1 << (sig - 1))) || 
+		((int) current->sigaction[sig - 1].sa_handler == 1))
+		return -EIO;
+	else if (current->sigaction[sig-1].sa_handler)
+		return -EINTR;
+	else
+		return -ERESTARTSYS;
+}
 
 int tty_read(unsigned channel, char * buf, int nr) {
     return -1;
@@ -222,10 +257,9 @@ int tty_write(unsigned channel, char *buf, int nr) {
     tty = TTY_TABLE(channel);
     if (!(tty->read_q || tty->write_q || tty->secondary))
         return -EIO;
-    // @todo
-    if (L_TOSTOP(tty) && (current->tty == channel) && (tty->pgrp != current->pgrp)) 
-        panic("need return tty_signal");
-		//return(tty_signal(SIGTTIN, tty));
+    if (L_TOSTOP(tty) && 
+		(current->tty == channel) && (tty->pgrp != current->pgrp)) 
+		return(tty_signal(SIGTTOU, tty));
     while (nr > 0) {
         sleep_if_full(tty->write_q);
         if (current->signal & ~current->blocked)
@@ -296,5 +330,50 @@ void tty_init(void) {
             con_queues + i*3 + 2,
         };
     }
-	// @todo
+	for (i = 0; i < NR_SERIALS; i++) {
+		rs_table[i] = (struct tty_struct) {
+			{0, /* no translation */
+			0,  /* no translation */
+			B2400 | CS8,
+			0,
+			0,
+			INIT_C_CC},
+			0,
+			0,
+			0,
+			rs_write,
+			rs_queues+0+i*3,rs_queues+1+i*3,rs_queues+2+i*3
+		};
+	}
+	for (i = 0; i < NR_PTYS; i++) {
+		mpty_table[i] = (struct tty_struct) {
+			{0, /* no translation */
+			0,  /* no translation */
+			B9600 | CS8,
+			0,
+			0,
+			INIT_C_CC},
+			0,
+			0,
+			0,
+			mpty_write,
+			mpty_queues+0+i*3,mpty_queues+1+i*3,mpty_queues+2+i*3
+		};
+		spty_table[i] = (struct tty_struct) {
+			{0, /* no translation */
+			0,  /* no translation */
+			B9600 | CS8,
+			IXON | ISIG | ICANON,
+			0,
+			INIT_C_CC},
+			0,
+			0,
+			0,
+			spty_write,
+			spty_queues+0+i*3,spty_queues+1+i*3,spty_queues+2+i*3
+		};
+	}
+	rs_init();
+	printk("%d virtual consoles\n\r", NR_CONSOLES);
+	printk("%d pty's\n\r", NR_PTYS);
 }

@@ -28,3 +28,10 @@ int dumpmem(const void *address, int len) {
     }
     printk("\n\r");
 }
+
+int printkl(const char *str, int len) {
+    int i;
+    for (i = 0; i < len; i++) {
+        printk("%02x", str[i] & 0xff);
+    }
+}
