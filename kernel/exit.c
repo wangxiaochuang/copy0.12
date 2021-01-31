@@ -379,6 +379,7 @@ void do_exit(long code)
 	audit_ptree();
 #endif
 	schedule();
+	for(;;);
 }
 
 /* int -> void */
