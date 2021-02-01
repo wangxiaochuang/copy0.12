@@ -141,6 +141,7 @@ int copy_process(int nr, long ebp, long edi, long esi, long gs, long none,
     // 新进程的比邻年轻兄弟进程复位
     p->p_ysptr = 0;
     // 设置新进程的比邻老兄兄弟进程为父进程的最新子进程
+    // parent -> child(young) <=> p <=> old
     p->p_osptr = current->p_cptr;
     if (p->p_osptr) {
         p->p_osptr->p_ysptr = p;

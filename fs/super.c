@@ -3,6 +3,9 @@
 #include <linux/kernel.h>
 #include <asm/system.h>
 
+#include <errno.h>
+#include <sys/stat.h>
+
 #define set_bit(bitnr, addr) ({ 											\
 	register int __res; 													\
 	__asm__("bt %2, %3; setb %%al"											\
@@ -162,6 +165,87 @@ static struct super_block * read_super(int dev) {
     s->s_zmap[0]->b_data[0] |= 1;
     free_super(s);
     return s;
+}
+
+int sys_umount(char *dev_name) {
+	struct m_inode *inode;
+	struct super_block *sb;
+	int dev;
+
+    if (!(inode = namei(dev_name))) return -ENOENT;
+    dev = inode->i_zone[0];
+    if (!S_ISBLK(inode->i_mode)) {
+        iput(inode);
+        return -ENOTBLK;
+    }
+    iput(inode);
+    // 根文件系统不能被卸载
+    if (dev == ROOT_DEV) return -EBUSY;
+    if (!(sb = get_super(dev)) || !(sb->s_imount)) return -ENOENT;
+    // 超级块被安装到的i节点没有置位安装标志
+    if (!sb->s_imount->i_mount) {
+        printk("Mounted inode has i_mount=0\n");
+    }
+    for (inode = inode_table + 0; inode < inode_table + NR_INODE; inode++) {
+        // 遍历inode列表，发现有inode正在使用这个设备且引用计数不为0
+        if (inode->i_dev == dev && inode->i_count) {
+            return -EBUSY;
+        }
+    }
+    sb->s_imount->i_mount = 0;
+    iput(sb->s_imount);
+    sb->s_imount = NULL;
+    // 释放文件系统的根i节点
+    iput(sb->s_isup);
+    sb->s_isup = NULL;
+    put_super(dev);
+    sync_dev(dev);
+    return 0;
+}
+
+/**
+ * 将设备dev挂载到dir上
+ **/
+int sys_mount(char *dev_name, char *dir_name, int rw_flag) {
+	struct m_inode *dev_i, *dir_i;
+	struct super_block * sb;
+	int dev;
+
+    if (!(dev_i = namei(dev_name))) return -ENOENT;
+    dev = dev_i->i_zone[0];
+    if (!S_ISBLK(dev_i->i_mode)) {
+        iput(dev_i);
+        return -EPERM;
+    }
+    iput(dev_i);
+    if (!(dir_i = namei(dir_name))) return -ENOENT;
+    // 该i节点的引用数不是1（只能在这里引用），或者是根文件系统
+    if (dir_i->i_count != 1 || dir_i->i_num == ROOT_INO) {
+        iput(dir_i);
+        return -EBUSY;
+    }
+    if (!S_ISDIR(dir_i->i_mode)) {
+        iput(dir_i);
+        return -EPERM;
+    }
+    if (!(sb = read_super(dev))) {
+        iput(dir_i);
+        return -EBUSY;
+    }
+    // 已经挂载在其他地方了
+    if (sb->s_imount) {
+        iput(dir_i);
+        return -EBUSY;
+    }
+    // 这个目录i节点已经安装了文件系统
+    if (dir_i->i_mount) {
+        iput(dir_i);
+        return -EPERM;
+    }
+    sb->s_imount = dir_i;
+    dir_i->i_mount = 1;
+    dir_i->i_dirt = 1;
+    return 0;
 }
 
 void mount_root(void) {

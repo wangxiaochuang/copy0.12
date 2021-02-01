@@ -112,7 +112,7 @@ void schedule(void) {
 			break;
 		}
 		/* 除任务0以外，存在处于就绪状态但时间片都为0的任务，则更新counter值，然后重新寻找，这里没有考虑进程状态 */
-		for(p = &LAST_TASK ; p > &FIRST_TASK ; --p) {
+		for (p = &LAST_TASK; p > &FIRST_TASK; --p) {
 			if (*p) {
 				(*p)->counter = ((*p)->counter >> 1) + (*p)->priority;
 			}
@@ -320,6 +320,13 @@ int sys_getgid(void) {
 /* 取有效的组号egid */
 int sys_getegid(void) {
 	return current->egid;
+}
+
+int sys_nice(long increment) {
+	if (current->priority - increment > 0) {
+		current->priority -= increment;
+	}
+	return 0;
 }
 
 void sched_init(void) {

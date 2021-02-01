@@ -5,6 +5,64 @@
 #include <sys/times.h>
 #include <sys/utsname.h>
 
+int sys_ftime() {
+	return -ENOSYS;
+}
+
+int sys_break() {
+	return -ENOSYS;
+}
+
+int sys_ptrace() {
+	return -ENOSYS;
+}
+
+int sys_stty() {
+	return -ENOSYS;
+}
+
+int sys_gtty() {
+	return -ENOSYS;
+}
+
+int sys_rename() {
+	return -ENOSYS;
+}
+
+int sys_prof() {
+	return -ENOSYS;
+}
+
+int sys_setgid(int gid) {
+    if (suser())
+        current->gid = current->egid = current->sgid = gid;
+    else if ((gid == current->gid) || (gid == current->sgid))
+        current->egid = gid;
+    else
+        return -EPERM;
+    return 0;
+}
+
+int sys_acct() {
+	return -ENOSYS;
+}
+
+int sys_phys() {
+	return -ENOSYS;
+}
+
+int sys_lock() {
+	return -ENOSYS;
+}
+
+int sys_mpx() {
+	return -ENOSYS;
+}
+
+int sys_ulimit() {
+	return -ENOSYS;
+}
+
 int in_group_p(gid_t grp) {
     int i;
 
@@ -26,10 +84,6 @@ int in_group_p(gid_t grp) {
 static struct utsname thisname = {
 	UTS_SYSNAME, UTS_NODENAME, UTS_RELEASE, UTS_VERSION, UTS_MACHINE
 };
-
-int sys_ulimit() {
-	return -ENOSYS;
-}
 
 int sys_time(long * tloc) {
     int i;
@@ -77,14 +131,20 @@ int sys_setuid(int uid) {
 	return(0);
 }
 
+/**
+ * 设置系统开机时间。提供的参数值减去系统已经运行的时间秒值就是开机时间秒值
+ **/
 int sys_stime(long * tptr) {
 	if (!suser())
 		return -EPERM;
-	startup_time = get_fs_long((unsigned long *)tptr) - jiffies/HZ;
+	startup_time = get_fs_long((unsigned long *)tptr) - jiffies / HZ;
 	jiffies_offset = 0;
 	return 0;
 }
 
+/**
+ * 获取当前任务运行时间统计值
+ **/
 int sys_times(struct tms * tbuf) {
 	if (tbuf) {
 		verify_area(tbuf,sizeof *tbuf);
@@ -101,6 +161,10 @@ int sys_brk(unsigned long end_data_seg) {
         end_data_seg < current->start_stack - 16384)
         current->brk = end_data_seg;
     return current->brk;
+}
+
+int sys_setpgid(int pid, int pgid) {
+    
 }
 
 int sys_setsid(void) {

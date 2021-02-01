@@ -2,6 +2,7 @@
 #include <linux/kernel.h>
 #include <asm/segment.h>
 
+#include <string.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <const.h>
@@ -120,10 +121,13 @@ static struct buffer_head * find_entry(struct m_inode ** dir,
     return NULL;
 }
 
+/**
+ * 向目录添加一个条目，返回该条目所在块的缓冲区
+ **/
 static struct buffer_head * add_entry(struct m_inode * dir,
     const char * name, int namelen, struct dir_entry ** res_dir) {
 
-    int block,i;
+    int block, i;
     struct buffer_head * bh;
     struct dir_entry * de;
 
@@ -152,9 +156,13 @@ static struct buffer_head * add_entry(struct m_inode * dir,
         if ((char *) de >= BLOCK_SIZE + bh->b_data) {
             brelse(bh);
             bh = NULL;
+            // 找到dir下该i目录项对应的块，没有就新申请一个块
             block = create_block(dir, i/DIR_ENTRIES_PER_BLOCK);
             if (!block)
                 return NULL;
+            // 如果读取的磁盘逻辑块数据返回的缓冲块指针为空，说明这块逻辑块可能是因不存在而新创建的空块
+            // 加上一个块容纳的目录项数，用以跳过这个新块
+            // ? bh都为NULL，continue回去要报错把？测试一下 @todo
             if (!(bh = bread(dir->i_dev, block))) {
                 i += DIR_ENTRIES_PER_BLOCK;
                 continue;
@@ -163,10 +171,11 @@ static struct buffer_head * add_entry(struct m_inode * dir,
         }
         if (i * sizeof(struct dir_entry) >= dir->i_size) {
             de->inode = 0;
-            dir->i_size = (i+1) * sizeof(struct dir_entry);
+            dir->i_size = (i + 1) * sizeof(struct dir_entry);
             dir->i_dirt = 1;
             dir->i_ctime = CURRENT_TIME;
         }
+        // 为0说明找到一个坑了
         if (!de->inode) {
             dir->i_mtime = CURRENT_TIME;
             for (i = 0; i < NAME_LEN; i++)
@@ -270,7 +279,8 @@ static struct m_inode * dir_namei(const char * pathname,
     const char *basename;
     struct m_inode *dir;
 
-    // 比如：/usr/local ==> local
+    // 比如：/usr/local/aa ==> local
+    // 获取路径的dirname所在的inode
     if (!(dir = get_dir(pathname, base))) {
         return NULL;
     }
@@ -421,5 +431,369 @@ int open_namei(const char * pathname, int flag, int mode,
         truncate(inode);
     }
     *res_inode = inode;
+    return 0;
+}
+
+/**
+ * 创建一个特殊设备文件
+ **/
+int sys_mknod(const char * filename, int mode, int dev) {
+    const char *basename;
+    int namelen;
+    struct m_inode *dir, *inode;
+    struct buffer_head *bh;
+    struct dir_entry *de;
+
+    if (!suser()) return -EPERM;
+    if (!(dir = dir_namei(filename, &namelen, &basename, NULL)))
+        return -ENOENT;
+    if (!namelen) {
+        iput(dir);
+        return -ENOENT;
+    }
+    if (!permission(dir, MAY_WRITE)) {
+        iput(dir);
+        return -EPERM;
+    }
+    bh = find_entry(&dir, basename, namelen, &de);
+    if (bh) {
+        brelse(bh);
+        iput(dir);
+        return -EEXIST;
+    }
+    inode = new_inode(dir->i_dev);
+    if (!inode) {
+        iput(dir);
+        return -ENOSPC;
+    }
+    inode->i_mode = mode;
+    if (S_ISBLK(mode) || S_ISCHR(mode)) {
+        inode->i_zone[0] = dev;
+    }
+    inode->i_mtime = inode->i_atime = CURRENT_TIME;
+    inode->i_dirt = 1;
+    bh = add_entry(dir, basename, namelen, &de);
+    if (!bh) {
+        iput(dir);
+        inode->i_nlinks = 0;
+        iput(inode);
+        return -ENOSPC;
+    }
+    de->inode = inode->i_num;
+    bh->b_dirt = 1;
+    iput(dir);
+    iput(inode);
+    brelse(bh);
+    return 0;
+}
+
+int sys_mkdir(const char * pathname, int mode) {
+    const char * basename;
+    int namelen;
+    struct m_inode * dir, * inode;
+    struct buffer_head * bh, *dir_block;
+    struct dir_entry * de;
+
+    if (!(dir = dir_namei(pathname, &namelen, &basename, NULL))) {
+        return -ENOENT;
+    }
+    if (!namelen) {
+        iput(dir);
+        return -ENOENT;
+    }
+    if (!permission(dir, MAY_WRITE)) {
+        iput(dir);
+        return -EPERM;
+    }
+    bh = find_entry(&dir, basename, namelen, &de);
+    if (bh) {
+        brelse(bh);
+        iput(dir);
+        return -EEXIST;
+    }
+    inode = new_inode(dir->i_dev);
+    if (!inode) {
+        iput(dir);
+        return -ENOSPC;
+    }
+    // . .. 占据前两项
+    inode->i_size = 32;
+    inode->i_dirt = 1;
+    inode->i_mtime = inode->i_atime = CURRENT_TIME;
+    if (!(inode->i_zone[0] = new_block(inode->i_dev))) {
+        iput(dir);
+        inode->i_nlinks--;
+        iput(inode);
+        return -ENOSPC;
+    }
+    inode->i_dirt = 1;
+    if (!(dir_block = bread(inode->i_dev, inode->i_zone[0]))) {
+        iput(dir);
+        inode->i_nlinks--;
+        iput(inode);
+        return -ERROR;
+    }
+    de = (struct dir_entry *) dir_block->b_data;
+    de->inode = inode->i_num;
+    strcpy(de->name, ".");
+    de++;
+    de->inode = dir->i_num;
+    strcpy(de->name, "..");
+    inode->i_nlinks = 2;
+    dir_block->b_dirt = 1;
+    brelse(dir_block);
+    inode->i_mode = I_DIRECTORY | (mode & 0777 & ~current->umask);
+    inode->i_dirt = 1;
+    bh = add_entry(dir, basename, namelen, &de);
+    if (!bh) {
+        iput(dir);
+        inode->i_nlinks = 0;
+        iput(inode);
+        return -ENOSPC;
+    }
+    de->inode = inode->i_num;
+    bh->b_dirt = 1;
+    dir->i_nlinks++;
+    dir->i_dirt = 1;
+    iput(dir);
+    iput(inode);
+    brelse(bh);
+    return 0;
+}
+
+/**
+ * 检查目录是否为空，是返回1
+ **/
+static int empty_dir(struct m_inode * inode) {
+    int nr,block;
+    int len;
+    struct buffer_head * bh;
+    struct dir_entry * de;
+
+    len = inode->i_size / sizeof (struct dir_entry);
+    if (len < 2 || !inode->i_zone[0] ||
+        !(bh = bread(inode->i_dev, inode->i_zone[0]))) {
+        printk("warning - bad directory on dev %04x\n",inode->i_dev);
+        return 0;
+    }
+    de = (struct dir_entry *) bh->b_data;
+    if (de[0].inode != inode->i_num || !de[1].inode ||
+        strcmp(".", de[0].name) || strcmp("..", de[1].name)) {
+        printk("warning - bad directory on dev %04x\n",inode->i_dev);
+        return 0;
+    }
+    nr = 2;
+    de += 2;
+    while (nr < len) {
+        if ((void *) de >= (void *) (bh->b_data + BLOCK_SIZE)) {
+            brelse(bh);
+            block = bmap(inode, nr / DIR_ENTRIES_PER_BLOCK);
+            if (!block) {
+                nr == DIR_ENTRIES_PER_BLOCK;
+                continue;
+            }
+            if (!(bh = bread(inode->i_dev, block))) {
+                return 0;
+            }
+            de = (struct dir_entry *) bh->b_data;
+        }
+        if (de->inode) {
+            brelse(bh);
+            return 0;
+        }
+        de++;
+        nr++;
+    }
+    brelse(bh);
+    return 1;
+}
+
+int sys_rmdir(const char * name) {
+    const char *basename;
+    int namelen;
+    struct m_inode *dir, *inode;
+    struct buffer_head *bh;
+    struct dir_entry *de;
+
+    if (!(dir = dir_namei(name, &namelen, &basename, NULL))) return -ENOENT;
+    if (!namelen) {
+        iput(dir);
+        return -ENOENT;
+    }
+    if (!permission(dir, MAY_WRITE)) {
+        iput(dir);
+        return -EPERM;
+    }
+    bh = find_entry(&dir, basename, namelen, &de);
+    if (!bh) {
+        iput(dir);
+        return -ENOENT;
+    }
+    if (!(inode = iget(dir->i_dev, de->inode))) {
+        iput(dir);
+        brelse(bh);
+        return -EPERM;
+    }
+    if ((dir->i_mode & S_ISVTX) && current->euid && inode->i_uid != current->euid) {
+        iput(dir);
+        iput(inode);
+        brelse(bh);
+        return -EPERM;
+    }
+    if (inode->i_dev != dir->i_dev || inode->i_count > 1) {
+        iput(dir);
+        iput(inode);
+        brelse(bh);
+        return -EPERM;
+    }
+    if (inode == dir) {
+        iput(inode);
+        iput(dir);
+        brelse(bh);
+        return -EPERM;
+    }
+    if (!S_ISDIR(inode->i_mode)) {
+        iput(inode);
+        iput(dir);
+        brelse(bh);
+        return -ENOTDIR;
+    }
+    if (!empty_dir(inode)) {
+        iput(inode);
+        iput(dir);
+        brelse(bh);
+        return -ENOTEMPTY;
+    }
+    if (inode->i_nlinks != 2)
+        printk("empty directory has nlink!=2 (%d)",inode->i_nlinks);
+    de->inode = 0;
+    bh->b_dirt = 1;
+    brelse(bh);
+    inode->i_nlinks = 0;
+    inode->i_dirt = 1;
+    dir->i_nlinks--;
+    dir->i_ctime = dir->i_mtime = CURRENT_TIME;
+    dir->i_dirt = 1;
+    iput(dir);
+    iput(inode);
+    return 0;
+}
+
+int sys_unlink(const char * name) {
+    const char *basename;
+    int namelen;
+    struct m_inode *dir, *inode;
+    struct buffer_head *bh;
+    struct dir_entry *de;
+
+    if (!(dir = dir_namei(name, &namelen, &basename, NULL)))
+        return -ENOENT;
+    if (!namelen) {
+        iput(dir);
+        return -ENOENT;
+    }
+    if (!permission(dir, MAY_WRITE)) {
+        iput(dir);
+        return -EPERM;
+    }
+    bh = find_entry(&dir, basename, namelen, &de);
+    if (!bh) {
+        iput(dir);
+        return -ENOENT;
+    }
+    if (!(inode = iget(dir->i_dev, de->inode))) {
+        iput(dir);
+        brelse(bh);
+        return -ENOENT;
+    }
+    if ((dir->i_mode & S_ISVTX) && !suser() &&
+        current->euid != inode->i_uid &&
+        current->euid != dir->i_uid) {
+        iput(dir);
+        iput(inode);
+        brelse(bh);
+        return -EPERM;
+    }
+    if (S_ISDIR(inode->i_mode)) {
+        iput(inode);
+        iput(dir);
+        brelse(bh);
+        return -EPERM;
+    }
+    if (!inode->i_nlinks) {
+        printk("Deleting nonexistent file (%04x:%d), %d\n",
+            inode->i_dev, inode->i_num, inode->i_nlinks);
+        inode->i_nlinks = 1;
+    }
+    de->inode = 0;
+    bh->b_dirt = 1;
+    brelse(bh);
+    inode->i_nlinks--;
+    inode->i_dirt = 1;
+    inode->i_ctime = CURRENT_TIME;
+    iput(inode);
+    iput(dir);
+    return 0;
+}
+
+int sys_link(const char * oldname, const char * newname) {
+    struct dir_entry *de;
+    struct m_inode *oldinode, *dir;
+    struct buffer_head *bh;
+    const char *basename;
+    int namelen;
+
+    oldinode = namei(oldname);
+    if (!oldinode)
+        return -ENOENT;
+    if (S_ISDIR(oldinode->i_mode)) {
+        iput(oldinode);
+        return -EPERM;
+    }
+    dir = dir_namei(newname, &namelen, &basename, NULL);
+    if (!dir) {
+        iput(oldinode);
+        return -EACCES;
+    }
+    // namelen为0说明是目录，像这样的 /usr/local/mnt/
+    if (!namelen) {
+        iput(oldinode);
+        iput(dir);
+        return -EPERM;
+    }
+    // 硬链接需要是同一个文件系统
+    if (dir->i_dev != oldinode->i_dev) {
+        iput(dir);
+        iput(oldinode);
+        return -EXDEV;
+    }
+    if (!permission(dir, MAY_WRITE)) {
+        iput(dir);
+        iput(oldinode);
+        return -EACCES;
+    }
+    bh = find_entry(&dir, basename, namelen, &de);
+    if (bh) {
+        brelse(bh);
+        iput(dir);
+        iput(oldinode);
+        return -EEXIST;
+    }
+    bh = add_entry(dir, basename, namelen, &de);
+    if (!bh) {
+        iput(dir);
+        iput(oldinode);
+        return -ENOSPC;
+    }
+    // 硬链接指向同一个inode号
+    de->inode = oldinode->i_num;
+    bh->b_dirt = 1;
+    brelse(bh);
+    iput(dir);
+    // 硬链接数据加1
+    oldinode->i_nlinks++;
+    oldinode->i_ctime = CURRENT_TIME;
+    oldinode->i_dirt = 1;
+    iput(oldinode);
     return 0;
 }

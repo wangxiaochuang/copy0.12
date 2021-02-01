@@ -180,6 +180,7 @@ void init(void) {
         }
         printf("\n\rchild %d died with code %04x\n\r", pid, i);
 		sync();
+        for (;;);
     }
     panic("error error error error\n\r");
     _exit(0);

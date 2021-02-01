@@ -1,13 +1,63 @@
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <sys/types.h>
+#include <utime.h>
 #include <sys/stat.h>
 
 #include <linux/sched.h>
 #include <linux/tty.h>
+#include <linux/kernel.h>
+
+#include <asm/segment.h>
 
 int sys_ustat(int dev, struct ustat * ubuf) {
 	return -ENOSYS;
+}
+
+/**
+ * 修改文件访问和修改时间
+ **/
+int sys_utime(char *filename, struct utimbuf *times) {
+	struct m_inode *inode;
+	long actime, modtime;
+
+    if (!(inode = namei(filename))) return -ENOENT;
+    if (times) {
+        actime = get_fs_long((unsigned long *) &times->actime);
+        modtime = get_fs_long((unsigned long *) &times->modtime);
+    } else {
+        actime = modtime = CURRENT_TIME;
+    }
+    inode->i_atime = actime;
+    inode->i_mtime = modtime;
+    inode->i_dirt = 1;
+    iput(inode);
+    return 0;
+}
+
+/**
+ * 检查文件的访问权限
+ **/
+int sys_access(const char * filename, int mode) {
+    struct m_inode * inode;
+	int res, i_mode;
+
+    mode &= 0007;
+    if (!(inode = namei(filename))) return -EACCES;
+    i_mode = res = inode->i_mode & 0777;
+    iput(inode);
+    if (current->uid == inode->i_uid) {
+        res >>= 6;
+    } else if (current->gid == inode->i_gid) {
+        // 原本写的6，是bug
+        res >>= 3;
+    }
+    if ((res & 0007 & mode) == mode) return 0;
+    // 是超级用户且屏蔽码执行位是0或者文件可以被任何人执行、搜索
+    if ((!current->uid) && 
+        (!(mode & 1) || (i_mode & 0111))) return 0;
+    return -EACCES;
 }
 
 static int check_char_dev(struct m_inode * inode, int dev, int flag) {
@@ -56,6 +106,37 @@ int sys_chdir(const char * filename) {
     }
     iput(current->pwd);
     current->pwd = inode;
+    return 0;
+}
+
+int sys_chroot(const char * filename) {
+
+}
+
+int sys_chmod(const char * filename, int mode) {
+    struct m_inode *inode;
+    if (!(inode = namei(filename))) return -ENOENT;
+    if ((current->euid != inode->i_uid) && !suser()) {
+        iput(inode);
+        return -EACCES;
+    }
+    inode->i_mode = (mode & 07777) | (inode->i_mode & ~07777);
+    inode->i_dirt = 1;
+    iput(inode);
+    return 0;
+}
+
+int sys_chown(const char * filename, int uid, int gid) {
+    struct m_inode *inode;
+    if (!(inode = namei(filename))) return -ENOENT;
+    if (!suser()) {
+        iput(inode);
+        return -EACCES;
+    }
+    inode->i_uid = uid;
+    inode->i_gid = gid;
+    inode->i_dirt = 1;
+    iput(inode);
     return 0;
 }
 
