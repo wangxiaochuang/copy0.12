@@ -736,6 +736,74 @@ int sys_unlink(const char * name) {
     return 0;
 }
 
+int sys_symlink(const char * oldname, const char * newname) {
+    struct dir_entry *de;
+    struct m_inode *dir, *inode;
+    struct buffer_head *bh, *name_block;
+    const char *basename;
+    int namelen, i;
+    char c;
+
+    dir = dir_namei(newname, &namelen, &basename, NULL);
+    if (!dir) return -EACCES;
+    if (!namelen) {
+        iput(dir);
+        return -EPERM;
+    }
+    if (!permission(dir, MAY_WRITE)) {
+        iput(dir);
+        return -EACCES;
+    }
+    if (!(inode = new_inode(dir->i_dev))) {
+        iput(dir);
+        return -ENOSPC;
+    }
+    inode->i_mode = S_IFLNK | (0777 & ~current->umask);
+    inode->i_dirt = 1;
+    if (!(inode->i_zone[0] = new_block(inode->i_dev))) {
+        iput(dir);
+        inode->i_nlinks--;
+        iput(inode);
+        return -ENOSPC;
+    }
+    inode->i_dirt = 1;
+    if (!(name_block = bread(inode->i_dev, inode->i_zone[0]))) {
+        iput(dir);
+        inode->i_nlinks--;
+        iput(inode);
+        return -ERROR;
+    }
+    i = 0;
+    while (i < 1023 && (c = get_fs_byte(oldname++)))
+        name_block->b_data[i++] = c;
+    name_block->b_data[i] = 0;
+    name_block->b_dirt = 1;
+    brelse(name_block);
+    inode->i_size = i;
+    inode->i_dirt = 1;
+    bh = find_entry(&dir, basename, namelen, &de);
+    if (bh) {
+        inode->i_nlinks--;
+        iput(inode);
+        brelse(bh);
+        iput(dir);
+        return -EEXIST;
+    }
+    bh = add_entry(dir, basename, namelen, &de);
+    if (!bh) {
+        inode->i_nlinks--;
+        iput(inode);
+        iput(dir);
+        return -ENOSPC;
+    }
+    de->inode = inode->i_num;
+    bh->b_dirt = 1;
+    brelse(bh);
+    iput(dir);
+    iput(inode);
+    return 0;
+}
+
 int sys_link(const char * oldname, const char * newname) {
     struct dir_entry *de;
     struct m_inode *oldinode, *dir;

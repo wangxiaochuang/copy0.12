@@ -9,6 +9,9 @@
 
 #define LIBRARY_OFFSET (TASK_SIZE - LIBRARY_SIZE)
 
+#define CT_TO_SECS(x)	((x) / HZ)					/* 滴答数转换成秒 */
+#define CT_TO_USECS(x)	(((x) % HZ) * 1000000/HZ)	/* 滴答数转换成微秒 */
+
 #define FIRST_TASK task[0]
 #define LAST_TASK task[NR_TASKS-1]
 
@@ -16,6 +19,7 @@
 #include <linux/fs.h>
 #include <linux/mm.h>
 #include <sys/param.h>
+#include <sys/time.h>
 #include <sys/resource.h>
 
 #include <signal.h>

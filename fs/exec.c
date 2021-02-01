@@ -10,6 +10,26 @@ extern int sys_close(int fd);
 
 #define MAX_ARG_PAGES 32
 
+int sys_uselib(const char *library) {
+    struct m_inode *inode;
+    unsigned long base;
+    if (get_limit(0x17) != TASK_SIZE) return -EINVAL;
+    if (library) {
+        if (!(inode = namei(library))) {
+            return -ENOENT;
+        }
+    } else {
+        inode = NULL;
+    }
+    iput(current->library);
+    current->library = NULL;
+    base = get_base(current->ldt[2]);
+    base += LIBRARY_OFFSET;
+    free_page_tables(base, LIBRARY_SIZE);
+    current->library = inode;
+    return 0;
+}
+
 static unsigned long * create_tables(char * p, int argc, int envc) {
 	unsigned long *argv, *envp;
 	unsigned long * sp;

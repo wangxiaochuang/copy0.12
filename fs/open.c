@@ -109,8 +109,19 @@ int sys_chdir(const char * filename) {
     return 0;
 }
 
+/**
+ * 改变当前进程根目录
+ **/
 int sys_chroot(const char * filename) {
-
+    struct m_inode *inode;
+    if (!(inode = namei(filename))) return -ENOENT;
+    if (!S_ISDIR(inode->i_mode)) {
+        iput(inode);
+        return -ENOTDIR;
+    }
+    iput(current->root);
+    current->root = inode;
+    return 0;
 }
 
 int sys_chmod(const char * filename, int mode) {
