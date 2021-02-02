@@ -153,7 +153,6 @@ void init(void) {
         if (open("/etc/rc", O_RDONLY, 0)) {
 			_exit(1);
 		}
-        mytest();
         execve("/bin/sh", argv_rc, envp_rc);
 		_exit(2);
     }
@@ -165,6 +164,7 @@ void init(void) {
             printf("Fork failed in init\r\n");
             continue;
         }
+        // mytest();
         if (!pid) {
             close(0); close(1); close(2);
             setsid();
@@ -180,8 +180,6 @@ void init(void) {
         }
         printf("\n\rchild %d died with code %04x\n\r", pid, i);
 		sync();
-        for (;;);
     }
-    panic("error error error error\n\r");
     _exit(0);
 }

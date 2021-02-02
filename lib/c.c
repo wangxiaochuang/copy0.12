@@ -145,6 +145,15 @@ static void cat(const char *path) {
     }
 }
 
+static void getchar() {
+    char buf[16];
+    int size = read(0, buf, 1);
+    if (size <= 0) {
+        printf("read failed.... %d\n", size);
+        return;
+    }
+    printf("get char %c\n", buf[0]);
+}
 void mytest() {
     // list_dir("/usr/bin");
     // cat("/etc/rc");
@@ -161,4 +170,6 @@ void mytest() {
     int len = read(fd, buf, 64);
     printf("len: %d, content:\n%s", len, buf);
     */
+    getchar();
+    for(;;);
 }

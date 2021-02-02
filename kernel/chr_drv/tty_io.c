@@ -244,7 +244,79 @@ int tty_signal(int sig, struct tty_struct *tty) {
 }
 
 int tty_read(unsigned channel, char * buf, int nr) {
-    return -1;
+	struct tty_struct *tty;
+	struct tty_struct *other_tty = NULL;
+	char c, *b = buf;
+	int minimum, time;
+
+	if (channel > 255) return -EIO;
+	tty = TTY_TABLE(channel);
+	if (!(tty->write_q || tty->read_q || tty->secondary)) return -EIO;
+	if ((current->tty == channel) && (tty->pgrp != current->pgrp)) {
+		return (tty_signal(SIGTTIN, tty));
+	}
+	if (channel & 0x80)
+		other_tty = tty_table + (channel ^ 0x40);
+	time = 10L * tty->termios.c_cc[VTIME];
+	minimum = tty->termios.c_cc[VMIN];
+	if (L_CANON(tty)) {
+		minimum = nr;
+		current->timeout = 0xffffffff;
+		time = 0;
+	} else if (minimum) {
+		current->timeout = 0xffffffff;
+	} else {
+		minimum = nr;
+		if (time)
+			current->timeout = time + jiffies;
+		time = 0;
+	}
+	if (minimum > nr)
+		minimum = nr;
+	while (nr > 0) {
+		if (other_tty)
+			other_tty->write(other_tty);
+		cli();
+		if (EMPTY(tty->secondary) || (L_CANON(tty) && 
+			!FULL(tty->read_q) && !tty->secondary->data)) {
+            if (!current->timeout || 
+				(current->signal & ~current->blocked)) {
+				sti();
+				break;
+			}
+			if (IS_A_PTY_SLAVE(channel) && C_HUP(other_tty))
+				break;
+			interruptible_sleep_on(&tty->secondary->proc_list);
+			sti();
+			continue;
+		}
+		sti();
+		do {
+			GETCH(tty->secondary, c);
+			if ((EOF_CHAR(tty) != _POSIX_VDISABLE && 
+				c == EOF_CHAR(tty)) || c == 10)
+				tty->secondary->data--;
+			if ((EOF_CHAR(tty) != _POSIX_VDISABLE && 
+				c == EOF_CHAR(tty)) && L_CANON(tty))
+				break;
+			else {
+				put_fs_byte(c, b++);
+				if (!--nr)
+					break;
+			}
+			if (c == 10 && L_CANON(tty))
+				break;
+		} while (nr > 0 && !EMPTY(tty->secondary));
+		wake_up(&tty->read_q->proc_list);
+		if (time)
+			current->timeout = time + jiffies;
+		if (L_CANON(tty) || b - buf >= minimum)
+			break;
+	}
+	current->timeout = 0;
+	if ((current->signal & ~current->blocked) && !(b - buf))
+		return -ERESTARTSYS;
+	return (b - buf);
 }
 
 int tty_write(unsigned channel, char *buf, int nr) {

@@ -513,7 +513,7 @@ void con_write(struct tty_struct * tty) {
 	int currcons;
      
 	currcons = tty - tty_table;
-	if ((currcons >= MAX_CONSOLES) || (currcons < 0))
+	if ((currcons>=MAX_CONSOLES) || (currcons<0))
 		panic("con_write: illegal tty");
  	   
 	nr = CHARS(tty->write_q);
@@ -521,14 +521,12 @@ void con_write(struct tty_struct * tty) {
 		if (tty->stopped)
 			break;
 		GETCH(tty->write_q,c);
-		// 24: cancel->Ctrl+X, 26: substitude-> Ctrl+Z
 		if (c == 24 || c == 26)
 			state = ESnormal;
 		switch(state) {
 			case ESnormal:
-				// 普通字符
 				if (c>31 && c<127) {
-					if (x >= video_num_columns) {
+					if (x>=video_num_columns) {
 						x -= video_num_columns;
 						pos -= video_size_row;
 						lf(currcons);
@@ -541,23 +539,19 @@ void con_write(struct tty_struct * tty) {
 						);
 					pos += 2;
 					x++;
-				// ESC
 				} else if (c==27)
 					state=ESesc;
 				else if (c==10 || c==11 || c==12)
 					lf(currcons);
 				else if (c==13)
 					cr(currcons);
-				// del
 				else if (c==ERASE_CHAR(tty))
 					del(currcons);
-				// backspace
 				else if (c==8) {
 					if (x) {
 						x--;
 						pos -= 2;
 					}
-				// 水平制表符，光标移动到8的倍数上，超出则移到下一行并恢复c
 				} else if (c==9) {
 					c=8-(x&7);
 					x += c;
@@ -568,15 +562,13 @@ void con_write(struct tty_struct * tty) {
 						lf(currcons);
 					}
 					c=9;
-				// BEL 响铃
 				} else if (c==7)
 					sysbeep();
-			  	else if (c == 14)				/* SO 换出，使用G1 */
+			  	else if (c == 14)
 			  		translate = GRAF_TRANS;
-			  	else if (c == 15)     			/* SI 换出，使用G0 */
+			  	else if (c == 15)
 					translate = NORM_TRANS;
 				break;
-			// ESnormal下收到转义字符ESC，则转到本状态，处理完成后默认将是ESnormal状态
 			case ESesc:
 				state = ESnormal;
 				switch (c)
@@ -593,7 +585,7 @@ void con_write(struct tty_struct * tty) {
 				  case 'D':
 					lf(currcons);
 					break;
-				  case 'Z':							// 设备属性查询
+				  case 'Z':
 					respond(currcons,tty);
 					break;
 				  case '7':

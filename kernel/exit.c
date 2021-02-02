@@ -386,10 +386,8 @@ repeat:
 		schedule();
 		current->blocked = oldblocked;
 		if (current->signal & ~(current->blocked | (1 << (SIGCHLD - 1)))) {
-	printk("receive signal SIGCHLD, restart %d\n", current->pid);
 			return -ERESTARTSYS;
 		} else {
-	printk("no SIGCHLD, repeat %d\n", current->pid);
 			goto repeat;
 		}
 	}

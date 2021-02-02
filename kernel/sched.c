@@ -141,7 +141,6 @@ static inline void __sleep_on(struct task_struct **p, int state) {
 	current->state = state;
 repeat:	schedule();
 	if (*p && *p != current) {
-		printk("*p != current occur\n\r");
 		(**p).state = TASK_RUNNING;
 		current->state = TASK_UNINTERRUPTIBLE;
 		goto repeat;
