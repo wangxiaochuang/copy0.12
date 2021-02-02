@@ -152,7 +152,7 @@ static void getchar() {
         printf("read failed.... %d\n", size);
         return;
     }
-    printf("get char %c\n", buf[0]);
+    printf("get \t char %c\n", buf[0]);
 }
 void mytest() {
     // list_dir("/usr/bin");

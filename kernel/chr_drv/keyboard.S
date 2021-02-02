@@ -15,7 +15,7 @@
  * KBD_GR for German keyboards
  * KBD_FR for Frech keyboard
  */
-#define KBD_FINNISH
+#define KBD_US
 
 .text
 .globl keyboard_interrupt
@@ -59,20 +59,22 @@ keyboard_interrupt:
 	je set_e1
 	call *key_table(,%eax,4)
 	movb $0,e0
+# 0x61是8255A输出口B的地址，其第7位用于禁止和允许对键盘数据的处理，这段程序的目的是对收到的扫描码做出应答
+# 应答方式就是先禁止键盘，然后立刻重新允许键盘工作
 e0_e1:	inb $0x61,%al
 	jmp 1f
 1:	jmp 1f
-1:	orb $0x80,%al
+1:	orb $0x80,%al		# 置位禁止键盘
 	jmp 1f
 1:	jmp 1f
 1:	outb %al,$0x61
 	jmp 1f
 1:	jmp 1f
-1:	andb $0x7F,%al
+1:	andb $0x7F,%al		# 复位允许键盘
 	outb %al,$0x61
 	movb $0x20,%al
-	outb %al,$0x20
-	pushl $0
+	outb %al,$0x20		# 向8259中断芯片发送EOI（中断结束）信号
+	pushl $0			# 控制台tty号为0，作为参数调用do_tty_interrupt
 	call do_tty_interrupt
 	addl $4,%esp
 	pop %es
@@ -96,21 +98,21 @@ put_queue:
 	pushl %ecx
 	pushl %edx
 	movl table_list,%edx		# read-queue for console
-	movl head(%edx),%ecx
+	movl head(%edx),%ecx		# tty_queue结构，偏移为4的地方是缓冲区头
 1:	movb %al,buf(%edx,%ecx)
 	incl %ecx
 	andl $size-1,%ecx
 	cmpl tail(%edx),%ecx		# buffer full - discard everything
 	je 3f
-	shrdl $8,%ebx,%eax
-	je 2f
-	shrl $8,%ebx
+	shrdl $8,%ebx,%eax			# 将ebx中8个比特右移8位到eax
+	je 2f						# 若eax为0，说明已经没有字符了，就跳转
+	shrl $8,%ebx				# 还有字符，将ebx右移8位，继续写缓冲区
 	jmp 1b
-2:	movl %ecx,head(%edx)
-	movl proc_list(%edx),%ecx
+2:	movl %ecx,head(%edx)		# 更新头指针
+	movl proc_list(%edx),%ecx	# 要唤醒的进程
 	testl %ecx,%ecx
 	je 3f
-	movl $0,(%ecx)
+	movl $0,(%ecx)				# 等待进程存在，就置为就绪状态
 3:	popl %edx
 	popl %ecx
 	ret

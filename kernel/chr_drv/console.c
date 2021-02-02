@@ -900,7 +900,6 @@ void console_print(const char *b) {
     char c;
 
     while ((c = *(b++))) {
-    // while ((c = new_get_fs_byte(b++))) {
         if (c == 10) {
             cr(currcons);
             lf(currcons);
@@ -910,6 +909,12 @@ void console_print(const char *b) {
             cr(currcons);
             continue;
         }
+		if (c == 9) {
+			c = 8 - (x & 7);
+			x += c;
+			pos += c << 1;
+			continue;
+		}
         // 如果当前光标已经达到屏幕右末端，则修正光标的正确位置
         if (x >= video_num_columns) {
             x -= video_num_columns;

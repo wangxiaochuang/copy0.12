@@ -119,21 +119,29 @@ void copy_to_cooked(struct tty_struct * tty)
 		return;
 	}
 	while (1) {
-		if (EMPTY(tty->read_q))
+		if (EMPTY(tty->read_q)) {
 			break;
-		if (FULL(tty->secondary))
+		}
+		if (FULL(tty->secondary)) {
 			break;
+		}
 		GETCH(tty->read_q,c);
 		if (c==13) {
+			// 回车转换行
 			if (I_CRNL(tty))
 				c=10;
+			// 忽略回车
 			else if (I_NOCR(tty))
 				continue;
+		// 换行转回车
 		} else if (c==10 && I_NLCR(tty))
 			c=13;
+		// 大写转小写
 		if (I_UCLC(tty))
 			c = tolower(c);
+		// 已设置规范模式，则如下处理
 		if (L_CANON(tty)) {
+			// 如果是键盘终止控制符，则对已输入的当前字符执行删除处理
 			if ((KILL_CHAR(tty) != _POSIX_VDISABLE) &&
 			    (c==KILL_CHAR(tty))) {
 				/* deal with killing the input line */
@@ -141,8 +149,11 @@ void copy_to_cooked(struct tty_struct * tty)
 				        (c=LAST(tty->secondary))==10 ||
 				        ((EOF_CHAR(tty) != _POSIX_VDISABLE) &&
 					 (c==EOF_CHAR(tty))))) {
+				    // 已设置本地回显
 					if (L_ECHO(tty)) {
+						// 既然是删除已输入字符，则向写队列放入擦除字符
 						if (c<32)
+							// 如果是控制字符则需要用两个字节表示
 							PUTCH(127,tty->write_q);
 						PUTCH(127,tty->write_q);
 						tty->write(tty);
@@ -151,6 +162,7 @@ void copy_to_cooked(struct tty_struct * tty)
 				}
 				continue;
 			}
+			// 如果是删除控制字符
 			if ((ERASE_CHAR(tty) != _POSIX_VDISABLE) &&
 			    (c==ERASE_CHAR(tty))) {
 				if (EMPTY(tty->secondary) ||
@@ -168,13 +180,16 @@ void copy_to_cooked(struct tty_struct * tty)
 				continue;
 			}
 		}
+		// 这个标志表示终端停止/开始输出控制字符起作用，否则停止和开始字符做一般字符供进程读取
 		if (I_IXON(tty)) {
+			// 是停止标志，则暂停tty输出，同时丢弃该字符
 			if ((STOP_CHAR(tty) != _POSIX_VDISABLE) &&
 			    (c==STOP_CHAR(tty))) {
 				tty->stopped=1;
 				tty->write(tty);
 				continue;
 			}
+			// 是开始标志，则恢复tty输出，同时丢弃该字符
 			if ((START_CHAR(tty) != _POSIX_VDISABLE) &&
 			    (c==START_CHAR(tty))) {
 				tty->stopped=0;
@@ -182,17 +197,21 @@ void copy_to_cooked(struct tty_struct * tty)
 				continue;
 			}
 		}
+		// 这个标志表示键盘可以产生信号，给当前进程所在进程组的所有进程
 		if (L_ISIG(tty)) {
+			// ^C 键盘中断符
 			if ((INTR_CHAR(tty) != _POSIX_VDISABLE) &&
 			    (c==INTR_CHAR(tty))) {
 				kill_pg(tty->pgrp, SIGINT, 1);
 				continue;
 			}
+			// ^\ 退出符
 			if ((QUIT_CHAR(tty) != _POSIX_VDISABLE) &&
 			    (c==QUIT_CHAR(tty))) {
 				kill_pg(tty->pgrp, SIGQUIT, 1);
 				continue;
 			}
+			// ^Z 暂停符
 			if ((SUSPEND_CHAR(tty) != _POSIX_VDISABLE) &&
 			    (c==SUSPEND_CHAR(tty))) {
 				if (!is_orphaned_pgrp(tty->pgrp))
@@ -200,13 +219,17 @@ void copy_to_cooked(struct tty_struct * tty)
 				continue;
 			}
 		}
+		// 如果该字符时换行符（10），或者文件结束符EOF（4，^D），表示一行字符处理完了
+		// 把辅助缓冲队列中的当前行数增1
 		if (c==10 || (EOF_CHAR(tty) != _POSIX_VDISABLE &&
 			      c==EOF_CHAR(tty)))
 			tty->secondary->data++;
+		// 设置了回显
 		if (L_ECHO(tty)) {
 			if (c==10) {
 				PUTCH(10,tty->write_q);
 				PUTCH(13,tty->write_q);
+			// 是控制字符就显示字符^和c+64字符（即：^C、^H等）
 			} else if (c<32) {
 				if (L_ECHOCTL(tty)) {
 					PUTCH('^',tty->write_q);
@@ -218,6 +241,7 @@ void copy_to_cooked(struct tty_struct * tty)
 		}
 		PUTCH(c,tty->secondary);
 	}
+	// 退出循环，唤醒等待该辅助队列的接触
 	wake_up(&tty->secondary->proc_list);
 }
 
@@ -255,37 +279,50 @@ int tty_read(unsigned channel, char * buf, int nr) {
 	if ((current->tty == channel) && (tty->pgrp != current->pgrp)) {
 		return (tty_signal(SIGTTIN, tty));
 	}
+	// 如果channel大于等于128，则表示是伪终端，那么对应的另一个伪终端就是other_tty
 	if (channel & 0x80)
 		other_tty = tty_table + (channel ^ 0x40);
+	// 读操作超时定时值
 	time = 10L * tty->termios.c_cc[VTIME];
+	// 最少需要读取的字符个数
 	minimum = tty->termios.c_cc[VMIN];
+	// 如果处于规范模式，则最少读取字符数为进程欲读字符数nr，且不超时
 	if (L_CANON(tty)) {
 		minimum = nr;
 		current->timeout = 0xffffffff;
 		time = 0;
+	// 非规范模式，且设置了最少读取字符数，则临时设置不超时，以让进程先读取辅助队列中已有字符
 	} else if (minimum) {
 		current->timeout = 0xffffffff;
+	// 非规范模式，且没有设置最少读取字符数，如果设置了超时定时值time，则设置current->timeout
 	} else {
 		minimum = nr;
 		if (time)
 			current->timeout = time + jiffies;
 		time = 0;
 	}
+	// 如果设置的最少读取字符数大于程序要读的，就只读程序要读的数
+	// 即：规范模式下的读取操作不收VTIME、VMIN约束，他们仅在非规范模式中起作用
 	if (minimum > nr)
 		minimum = nr;
 	while (nr > 0) {
+		// 如果是要读的是伪终端，就让其配对的伪终端写，这样其写到本终端的读队列经过行规则函数转换后放入辅助队列
 		if (other_tty)
 			other_tty->write(other_tty);
 		cli();
+		// 辅助队列为空或者设置了规范模式且读队列未满且辅助队列字符行数为0
 		if (EMPTY(tty->secondary) || (L_CANON(tty) && 
 			!FULL(tty->read_q) && !tty->secondary->data)) {
+            // 没有设置过读字符超时值或者收到信号则退出
             if (!current->timeout || 
 				(current->signal & ~current->blocked)) {
 				sti();
 				break;
 			}
+			// 本终端是从伪终端且对应主伪终端已经挂断，则直接退出
 			if (IS_A_PTY_SLAVE(channel) && C_HUP(other_tty))
 				break;
+			// 进入可中断睡眠，等待读入
 			interruptible_sleep_on(&tty->secondary->proc_list);
 			sti();
 			continue;
@@ -313,6 +350,7 @@ int tty_read(unsigned channel, char * buf, int nr) {
 		if (L_CANON(tty) || b - buf >= minimum)
 			break;
 	}
+	// 复位读取超时定时值，如果收到信号且还没读取任何字符，则重启系统调用
 	current->timeout = 0;
 	if ((current->signal & ~current->blocked) && !(b - buf))
 		return -ERESTARTSYS;
