@@ -1,5 +1,6 @@
 #!Makefile
 
+C_INCS = $(shell find . -name "*.h")
 C_SOURCES = $(shell find . -name "*.c" -not -name makeswap.c)
 C_OBJECTS = $(patsubst %.c, %.o, $(C_SOURCES))
 S_SOURCES = $(shell find . -name "*.S" -not -name bootsect.S -not -name setup.S)
@@ -41,7 +42,7 @@ system.bin: $(OBJECTS)
 %.o: %.S
 	$(CC) -I include -c -o $@ $<
 
-%.o: %.c
+%.o: %.c $(C_INCS)
 	$(CC) $(C_FLAGS) -o $@ $<
 
 .PHONY: bochs
