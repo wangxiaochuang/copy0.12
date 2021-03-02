@@ -1,8 +1,18 @@
-AS	= as
-CC	= gcc
-LD	= ld
-CPP	= cpp -Iinclude
-CFLAGS	= -c -m32 -lasan -ggdb -gstabs+ -nostdinc -fno-pic -fno-builtin -fno-stack-protector -I include
+CCCOLOR     = "\033[34m"
+LINKCOLOR   = "\033[34;1m"
+SRCCOLOR    = "\033[33m"
+BINCOLOR    = "\033[37;1m"
+MAKECOLOR   = "\033[32;1m"
+ENDCOLOR    = "\033[0m"
+
+QUIET_CC    = @printf '    %b %b\n' $(CCCOLOR)CC$(ENDCOLOR) $(SRCCOLOR)$@$(ENDCOLOR) 1>&2;
+QUIET_LINK  = @printf '    %b %b\n' $(LINKCOLOR)LINK$(ENDCOLOR) $(BINCOLOR)$@$(ENDCOLOR) 1>&2;
+
+AS	= $(QUIET_CC)as
+CC	= $(QUIET_CC)gcc
+LD	= $(QUIET_LINK)ld
+CPP	= $(QUIET_CC)cpp -Iinclude
+CFLAGS	= -m32 -c -Wall -lasan -ggdb -gstabs+ -nostdinc -fno-pic -fno-builtin -fno-stack-protector -I include
 LDFLAGS	= -N -Ttext 0x0 --oformat binary -nostdlib
 
 ARCHIVES= kernel/kernel.o mm/mm.o fs/fs.o
