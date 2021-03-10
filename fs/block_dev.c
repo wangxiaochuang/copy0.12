@@ -8,28 +8,28 @@
 // 设备号确定的一个子设备上所拥有的数据总数(1块大小 = 1KB).
 extern int *blk_size[];
 
-int block_write(int dev, long * pos, char * buf, int count) {
-    int block = *pos >> BLOCK_SIZE_BITS;
-    int offset = *pos & (BLOCK_SIZE - 1);
+int block_write(struct inode *inode, struct file *filp, char *buf, int count) {
+    int block = filp->f_pos >> BLOCK_SIZE_BITS;
+    int offset = filp->f_pos & (BLOCK_SIZE - 1);
     int chars;
     int written = 0;
     int size;
+    unsigned int dev;
     struct buffer_head *bh;
     register char *p;
 
+    dev = inode->i_rdev;
     if (blk_size[MAJOR(dev)]) {
         size = blk_size[MAJOR(dev)][MINOR(dev)];
     } else {
         size = 0x7fffffff;
     }
     while (count > 0) {
-        if (block >= size) {
-            return written ? written : -EIO;
-        }
+        if (block >= size)
+            return written;
         chars = BLOCK_SIZE - offset;
-        if (chars > count) {
+        if (chars > count)
             chars = count;
-        }
         if (chars == BLOCK_SIZE) {
             bh = getblk(dev, block);
         } else {
@@ -41,53 +41,53 @@ int block_write(int dev, long * pos, char * buf, int count) {
         }
         p = offset + bh->b_data;
         offset = 0;
-        *pos += chars;
+        filp->f_pos += chars;
         written += chars;
         count -= chars;
-        while (chars-- > 0) {
-            *(p++) = get_fs_byte(buf++);
-        }
+        memcpy_fromfs(p, buf, chars);
+        p += chars;
+        buf += chars;
         bh->b_dirt = 1;
         brelse(bh);
     }
     return written;
 }
 
-int block_read(int dev, unsigned long * pos, char * buf, int count) {
-    int block = *pos >> BLOCK_SIZE_BITS;
-    int offset = *pos & (BLOCK_SIZE-1);
-    int chars;
-    int size;
+int block_read(struct inode *inode, struct file *filp, char *buf, int count) {
+    // 以kb为单位，一块为1kb
+    unsigned int block = filp->f_pos >> BLOCK_SIZE_BITS;
+    // 在一块中的偏移
+    unsigned int offset = filp->f_pos & (BLOCK_SIZE - 1);
+    unsigned int chars;
+    unsigned int size;
+    unsigned int dev;
     int read = 0;
     struct buffer_head *bh;
     register char *p;
 
-    if (blk_size[MAJOR(dev)]) {
+    dev = inode->i_rdev;
+    if (blk_size[MAJOR(dev)])
         size = blk_size[MAJOR(dev)][MINOR(dev)];
-    } else {
+    else
         size = 0x7fffffff;
-    }
     while (count > 0) {
-        // 要读的块号肯定不能大于总块数
-        if (block >= size) {
-            return read ? read : -EIO;
-        }
+        // 要读的块号大于最大块数
+        if (block >= size)
+            return read;
         chars = BLOCK_SIZE - offset;
-        if (chars > count) {
+        if (chars > count)
             chars = count;
-        }
-        if (!(bh = breada(dev, block, block+1, block+2, -1))) {
+        if (!(bh = breada(dev, block, block+1, block+2, -1)))
             return read ? read : -EIO;
-        }
         block++;
         p = offset + bh->b_data;
         offset = 0;
-        *pos += chars;
+        filp->f_pos += chars;
         read += chars;
         count -= chars;
-        while (chars-- > 0) {
-            put_fs_byte(*(p++), buf++);
-        }
+        memcpy_tofs(buf, p, chars);
+        p += chars;
+        buf += chars;
         brelse(bh);
     }
     return read;

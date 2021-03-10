@@ -3,7 +3,11 @@
 
 #include <sys/types.h>
 
+typedef int sig_atomic_t;
 typedef unsigned int sigset_t;
+
+#define _NSIG             32
+#define NSIG		_NSIG
 
 #define SIGHUP		 1				/* Hang Up	-- 挂起控制终端或进程 */
 #define SIGINT		 2				/* Interrupt -- 来自键盘的中断 */
@@ -28,6 +32,8 @@ typedef unsigned int sigset_t;
 #define SIGTSTP		20				/* TTY Stop	-- tty 发出停止进程，可忽略 */
 #define SIGTTIN		21				/* TTY In	-- 后台进程请求输入 */
 #define SIGTTOU		22				/* TTY Out	-- 后台进程请求输出 */
+
+#define SIGWINCH	28
 
 #define SA_NOCLDSTOP	1			/* 当子进程处于停止状态，就不对SIGCHLD处理 */
 #define SA_INTERRUPT	0x20000000	/* 系统调用被信号中断后不重新启动系统调用 */

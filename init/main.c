@@ -77,8 +77,7 @@ static void time_init(void) {
 	BCD_TO_BIN(time.tm_mon);
 	BCD_TO_BIN(time.tm_year);
     time.tm_mon--;
-    unsigned long tmp = kernel_mktime(&time);
-    startup_time = tmp;
+    startup_time = kernel_mktime(&time);
 }
 static void printf(const char *fmt, ...)
 {
@@ -93,9 +92,8 @@ static void printf(const char *fmt, ...)
 
 struct drive_info { char dummy[32]; } drive_info;
 
-void main(void) {
+void start_kernel(void) {
     ROOT_DEV = ORIG_ROOT_DEV;
-    SWAP_DEV = ORIG_SWAP_DEV;
     drive_info = DRIVE_INFO;
     memory_end = (1 << 20) + (EXT_MEM_K << 10);
     memory_end &= 0xfffff000;
@@ -103,10 +101,12 @@ void main(void) {
         memory_end = 16 * 1024 * 1024;
     }
 
-    if (memory_end > 12 * 1024 * 1024) {
+    if (memory_end >= 12 * 1024 * 1024) {
         buffer_memory_end = 4 * 1024 * 1024;
-    } else if (memory_end > 6 * 1024 * 1024) {
+    } else if (memory_end >= 6 * 1024 * 1024) {
         buffer_memory_end = 2 * 1024 * 1024;
+    } else if (memory_end >= 4 * 1024 * 1024) {
+        buffer_memory_end = 3 * 512 * 1024;
     } else {
         buffer_memory_end = 1 * 1024 * 1024;
     }
@@ -125,16 +125,13 @@ void main(void) {
     sched_init();
     buffer_init(buffer_memory_end);
     hd_init();
-    printk("\nstart time: %u\n", startup_time);
     sti();
-
     move_to_user_mode();
     if (!fork()) {
         init();
     }
-    while(1){
+    for (;;)
         __asm__("int $0x80"::"a" (__NR_pause));
-    };
 }
 
 extern void mytest();

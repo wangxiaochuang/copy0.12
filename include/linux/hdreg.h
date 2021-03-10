@@ -34,12 +34,14 @@
 #define WIN_DIAGNOSE		0x90
 #define WIN_SPECIFY		0x91
 
+#define EXTENDED_PARTITION 5
+
 struct partition {
 	unsigned char boot_ind;		/* 0x80 - active (unused) */
 	unsigned char head;		/* ? */
 	unsigned char sector;		/* ? */
 	unsigned char cyl;		/* ? */
-	unsigned char sys_ind;		/* ? */
+	unsigned char sys_ind;		/* 扩展分区标志 */
 	unsigned char end_head;		/* ? */
 	unsigned char end_sector;	/* ? */
 	unsigned char end_cyl;		/* ? */

@@ -6,7 +6,6 @@
 #include <sys/stat.h>
 
 #include <linux/sched.h>
-#include <linux/tty.h>
 #include <linux/kernel.h>
 
 #include <asm/segment.h>
@@ -19,16 +18,20 @@ int sys_ustat(int dev, struct ustat * ubuf) {
  * 修改文件访问和修改时间
  **/
 int sys_utime(char *filename, struct utimbuf *times) {
-	struct m_inode *inode;
+	struct inode *inode;
 	long actime, modtime;
 
     if (!(inode = namei(filename))) return -ENOENT;
     if (times) {
+        if (current->euid != inode->i_uid &&
+            !permission(inode, MAY_WRITE)) {
+            iput(inode);
+            return -EPERM;
+        }
         actime = get_fs_long((unsigned long *) &times->actime);
         modtime = get_fs_long((unsigned long *) &times->modtime);
-    } else {
+    } else
         actime = modtime = CURRENT_TIME;
-    }
     inode->i_atime = actime;
     inode->i_mtime = modtime;
     inode->i_dirt = 1;
@@ -40,7 +43,7 @@ int sys_utime(char *filename, struct utimbuf *times) {
  * 检查文件的访问权限
  **/
 int sys_access(const char * filename, int mode) {
-    struct m_inode * inode;
+    struct inode * inode;
 	int res, i_mode;
 
     mode &= 0007;
@@ -96,7 +99,7 @@ static int check_char_dev(struct m_inode * inode, int dev, int flag) {
 }
 
 int sys_chdir(const char * filename) {
-    struct m_inode *inode;
+    struct inode *inode;
 
     if (!(inode = namei(filename)))
         return -ENOENT;
@@ -113,7 +116,7 @@ int sys_chdir(const char * filename) {
  * 改变当前进程根目录
  **/
 int sys_chroot(const char * filename) {
-    struct m_inode *inode;
+    struct inode *inode;
     if (!(inode = namei(filename))) return -ENOENT;
     if (!S_ISDIR(inode->i_mode)) {
         iput(inode);
@@ -125,7 +128,7 @@ int sys_chroot(const char * filename) {
 }
 
 int sys_chmod(const char * filename, int mode) {
-    struct m_inode *inode;
+    struct inode *inode;
     if (!(inode = namei(filename))) return -ENOENT;
     if ((current->euid != inode->i_uid) && !suser()) {
         iput(inode);
@@ -138,7 +141,7 @@ int sys_chmod(const char * filename, int mode) {
 }
 
 int sys_chown(const char * filename, int uid, int gid) {
-    struct m_inode *inode;
+    struct inode *inode;
     if (!(inode = namei(filename))) return -ENOENT;
     if (!suser()) {
         iput(inode);
@@ -152,28 +155,23 @@ int sys_chown(const char * filename, int uid, int gid) {
 }
 
 int sys_open(const char * filename, int flag, int mode) {
-    struct m_inode *inode;
+    struct inode *inode;
     struct file *f;
     int i, fd;
 
-    mode &= 0777 & ~current->umask;
-
-    for (fd = 0; fd < NR_OPEN; fd++) {
-        if (!current->filp[fd]) {
+    for (fd = 0; fd < NR_OPEN; fd++)
+        if (!current->filp[fd])
             break;
-        }
-    }
-    if (fd >= NR_OPEN) {
+    if (fd >= NR_OPEN)
         return -EINVAL;
-    }
+    // 使用fork创建一个子进程时，若该字段的某一位被置位了，就会关闭这个，默认都会打开，所以这里要复位
     current->close_on_exec &= ~(1<<fd);
 
+    // 找到一个空闲的struct file，空闲依据是f_count为0
     f = 0 + file_table;
-    for (i = 0; i < NR_FILE; i++, f++) {
-        if (!f->f_count) {
-            break;
-        }
-    }
+    for (i = 0; i < NR_FILE; i++, f++)
+        if (!f->f_count) break;
+
     if (i >= NR_FILE) {
         return -EINVAL;
     }
@@ -183,27 +181,24 @@ int sys_open(const char * filename, int flag, int mode) {
         f->f_count = 0;
         return i;
     }
-    if (S_ISCHR(inode->i_mode)) {
-        if (check_char_dev(inode, inode->i_zone[0], flag)) {
-            iput(inode);
-            current->filp[fd] = NULL;
-			f->f_count = 0;
-			return -EAGAIN;
-        }
-    }
-    if (S_ISBLK(inode->i_mode)) {
-        check_disk_change(inode->i_zone[0]);
-	}
-    f->f_mode = inode->i_mode;
+    f->f_op = NULL;
+    f->f_mode = "\001\002\003\000"[flag & O_ACCMODE];
     f->f_flags = flag;
     f->f_count = 1;
     f->f_inode = inode;
     f->f_pos = 0;
+    if (inode->i_op && inode->i_op->open)
+        if (i = inode->i_op->open(inode, f)) {
+            iput(inode);
+            f->f_count = 0;
+            current->filp[fd] = NULL;
+            return i;
+        }
     return (fd);
 }
 
 int sys_creat(const char * pathname, int mode) {
-	return sys_open(pathname, O_CREAT | O_TRUNC, mode);
+	return sys_open(pathname, O_CREAT | O_WRONLY | O_TRUNC, mode);
 }
 
 int sys_close(unsigned int fd) {

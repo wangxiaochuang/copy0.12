@@ -8,12 +8,9 @@
 
 extern int *blk_size[];
 
-struct m_inode inode_table[NR_INODE]={{0, }, };
+struct inode inode_table[NR_INODE]={{0, }, };
 
-static void read_inode(struct m_inode *inode);		/* 读指定i节点号的i节点信息 */
-static void write_inode(struct m_inode *inode);
-
-static inline void wait_on_inode(struct m_inode *inode) {
+static inline void wait_on_inode(struct inode *inode) {
 	cli();
 	while (inode->i_lock) {
 		sleep_on(&inode->i_wait);
@@ -21,7 +18,7 @@ static inline void wait_on_inode(struct m_inode *inode) {
 	sti();
 }
 
-static inline void lock_inode(struct m_inode *inode) {
+static inline void lock_inode(struct inode *inode) {
 	cli();
 	while (inode->i_lock) {
 		sleep_on(&inode->i_wait);
@@ -30,14 +27,39 @@ static inline void lock_inode(struct m_inode *inode) {
 	sti();
 }
 
-static inline void unlock_inode(struct m_inode *inode) {
+static inline void unlock_inode(struct inode *inode) {
 	inode->i_lock = 0;
 	wake_up(&inode->i_wait);
 }
 
+static void write_inode(struct inode * inode)
+{
+	lock_inode(inode);
+	if (!inode->i_dirt || !inode->i_dev) {
+		unlock_inode(inode);
+		return;
+	}
+	if (inode->i_op && inode->i_op->write_inode)
+		inode->i_op->write_inode(inode);
+	unlock_inode(inode);
+}
+
+static void read_inode(struct inode *inode) {
+	lock_inode(inode);
+	if (inode->i_sb && inode->i_sb->s_op && inode->i_sb->s_op->read_inode)
+		inode->i_sb->s_op->read_inode(inode);
+	unlock_inode(inode);
+}
+
+int bmap(struct inode *inode, int block) {
+    if (inode->i_op && inode->i_op->bmap)
+		return inode->i_op->bmap(inode,block);
+	return 0;
+}
+
 void invalidate_inodes(int dev) {
     int i;
-    struct m_inode *inode;
+    struct inode *inode;
 
     inode = 0 + inode_table;
     for (i = 0; i < NR_INODE; i++, inode++) {
@@ -45,6 +67,7 @@ void invalidate_inodes(int dev) {
         if (inode->i_dev == dev) {
             if (inode->i_count) {
                 printk("inode in use on removed disk\n\r");
+                continue;
             }
             inode->i_dev = inode->i_dirt = 0;
         }
@@ -53,7 +76,8 @@ void invalidate_inodes(int dev) {
 
 void sync_inodes(void) {
     int i;
-    struct m_inode *inode;
+    struct inode *inode;
+
     inode = 0 + inode_table;
     for (i = 0; i < NR_INODE; i++, inode++) {
         wait_on_inode(inode);
@@ -64,104 +88,7 @@ void sync_inodes(void) {
     }
 }
 
-// 目的是通过相对的块偏移找到真实数据所在绝对逻辑块号
-static int _bmap(struct m_inode * inode, int block, int create) {
-    struct buffer_head *bh;
-    int i;
-
-    if (block < 0) {
-        panic("_bmap: block < 0");
-    }
-    /* block >= 直接块数 + 间接块数 + 二次间接块数 */
-    if (block >= 7 + 512 + 512 * 512) {
-        panic("_bmap: block > big");
-    }
-    if (block < 7) {
-        // 指明了要创建，且对应i节点的逻辑块字段为0，则新申请
-        if (create && !inode->i_zone[block]) {
-            if ((inode->i_zone[block] = new_block(inode->i_dev))) {
-                inode->i_ctime = CURRENT_TIME;
-                inode->i_dirt = 1;
-            }
-        }
-        return inode->i_zone[block];
-    }
-    block -= 7;
-    if (block < 512) {
-        if (create && !inode->i_zone[7]) {
-            if ((inode->i_zone[7] = new_block(inode->i_dev))) {
-                inode->i_dirt = 1;
-                inode->i_ctime = CURRENT_TIME;
-            }
-        }
-        if (!inode->i_zone[7]) {
-            return 0;
-        }
-        if (!(bh = bread(inode->i_dev, inode->i_zone[7]))) {
-            return 0;
-        }
-        // 简洁块中第block项中的逻辑块号i，每一项占用2个字节，所以是unsigned short
-        i = ((unsigned short *) (bh->b_data))[block];
-        // 说明需要创建一个逻辑块
-        if (create && !i) {
-            if ((i = new_block(inode->i_dev))) {
-                ((unsigned short *) (bh->b_data))[block] = i;
-                bh->b_dirt = 1;
-            }
-        }
-        brelse(bh);
-        return i;
-    }
-
-    block -= 512;
-    if (create && !inode->i_zone[8]) {
-        if ((inode->i_zone[8] = new_block(inode->i_dev))) {
-            inode->i_dirt = 1;
-            inode->i_ctime = CURRENT_TIME;
-        }
-    }
-    if (!inode->i_zone[8]) {
-        return 0;
-    }
-    if (!(bh = bread(inode->i_dev, inode->i_zone[8]))) {
-        return 0;
-    }
-    // block除以512，取该一级块上第(block/512)项中的逻辑块号i
-    i = ((unsigned short *) bh->b_data)[block >> 9];
-    if (create && !i) {
-        if ((i = new_block(inode->i_dev))) {
-            ((unsigned short *) (bh->b_data))[block >> 9] = i;
-            bh->b_dirt = 1;
-        }
-    }
-    brelse(bh);
-    if (!i) {
-        return 0;
-    }
-    /* 读取二次间接块的二级块 */
-    if (!(bh = bread(inode->i_dev, i))) {
-        return 0;
-    }
-    i = ((unsigned short *)bh->b_data)[block & 511];
-    if (create && !i) {
-        if ((i = new_block(inode->i_dev))) {
-            ((unsigned short *) (bh->b_data))[block & 511] = i;
-            bh->b_dirt = 1;
-        }
-    }
-    brelse(bh);
-    return i;
-}
-
-int bmap(struct m_inode *inode, int block) {
-    return _bmap(inode, block, 0);
-}
-
-int create_block(struct m_inode * inode, int block) {
-	return _bmap(inode, block, 1);
-}
-
-void iput(struct m_inode * inode) {
+void iput(struct inode * inode) {
     if (!inode) {
         return;
     }
@@ -188,7 +115,7 @@ void iput(struct m_inode * inode) {
     }
     /* 如果是块设备文件的i节点，则i_zone[0]中是设备号，则刷新该设备。并等待i节点解锁 */
     if (S_ISBLK(inode->i_mode)) {
-        sync_dev(inode->i_zone[0]);
+        sync_dev(inode->i_rdev);
         wait_on_inode(inode);
     }
 repeat:
@@ -197,9 +124,9 @@ repeat:
         return;
     }
     /* 如果i节点的链接数为0，则说明i节点对应文件被删除 */
-    if (!inode->i_nlinks) {
-        truncate(inode);
-        free_inode(inode);
+    if (!inode->i_nlink) {
+        if (inode->i_op && inode->i_op->put_inode)
+			inode->i_op->put_inode(inode);
         return;
     }
     if (inode->i_dirt) {
@@ -212,13 +139,14 @@ repeat:
 }
 
 struct m_inode * get_empty_inode(void) {
-	struct m_inode * inode;
-	static struct m_inode * last_inode = inode_table;	/* 指向i节点表第1项 */
+	struct inode * inode;
+	static struct inode * last_inode = inode_table;	/* 指向i节点表第1项 */
 	int i;
 
     do {
         inode = NULL;
         for (i = NR_INODE; i; i--) {
+            // 从头开始搜索
             if (++last_inode >= inode_table + NR_INODE) {
                 last_inode = inode_table;
             }
@@ -243,8 +171,8 @@ struct m_inode * get_empty_inode(void) {
     return inode;
 }
 
-struct m_inode * get_pipe_inode(void) {
-    struct m_inode *inode;
+struct inode * get_pipe_inode(void) {
+    struct inode *inode;
 
     if (!(inode = get_empty_inode())) {
         return NULL;
@@ -263,8 +191,8 @@ struct m_inode * get_pipe_inode(void) {
 /**
  * 读取节点号为nr的i节点内容到内存i节点表中 
  **/
-struct m_inode * iget(int dev, int nr) {
-    struct m_inode *inode, *empty;
+struct inode * iget(int dev, int nr) {
+    struct inode *inode, *empty;
 
     if (!dev) {
         panic("iget with dev==0");
@@ -272,12 +200,12 @@ struct m_inode * iget(int dev, int nr) {
     empty = get_empty_inode();
     inode = inode_table;
     while (inode < NR_INODE + inode_table) {
-        if (inode->i_dev != dev || inode->i_num != nr) {
+        if (inode->i_dev != dev || inode->i_ino != nr) {
             inode++;
             continue;
         }
         wait_on_inode(inode);
-        if (inode->i_dev != dev || inode->i_num != nr) {
+        if (inode->i_dev != dev || inode->i_ino != nr) {
             inode = inode_table;
             continue;
         }
@@ -285,21 +213,24 @@ struct m_inode * iget(int dev, int nr) {
         if (inode->i_mount) {
             int i;
             for (i = 0; i < NR_SUPER; i++) {
-                if (super_block[i].s_imount == inode) {
+                if (super_block[i].s_covered == inode) {
                     break;
                 }
             }
             if (i >= NR_SUPER) {
+                printk("Mounted inode hasn't got sb\n");
                 if (empty) {
                     iput(empty);
                 }
                 return inode;
             }
             iput(inode);
-            dev = super_block[i].s_dev;
-            nr = ROOT_INO;
-            inode = inode_table;
-            continue;
+            if (!(inode = super_block[i].s_mounted))
+                printk("iget: mounted dev has no rootinode\n");
+            else {
+                inode->i_count++;
+                wait_on_inode(inode);
+            }
         }
         if (empty) {
             iput(empty);
@@ -310,70 +241,13 @@ struct m_inode * iget(int dev, int nr) {
         return (NULL);
     }
     inode = empty;
+    if (!(inode->i_sb = get_super(dev))) {
+        printk("iget: gouldn't get super-block\n\t");
+		iput(inode);
+		return NULL;
+    }
     inode->i_dev = dev;
-    inode->i_num = nr;
+    inode->i_ino = nr;
     read_inode(inode);
     return inode;
-}
-
-static void read_inode(struct m_inode *inode) {
-    struct super_block *sb;
-    struct buffer_head *bh;
-    int block;
-    
-    lock_inode(inode);
-    if (!(sb = get_super(inode->i_dev))) {
-        panic("trying to read inode without dev");
-    }
-    block = 2 + sb->s_imap_blocks + sb->s_zmap_blocks +
-        (inode->i_num - 1) / INODES_PER_BLOCK;
-    if (!(bh = bread(inode->i_dev, block))) {
-        panic("unable to read i-node block");
-    }
-    *(struct d_inode *)inode = 
-		((struct d_inode *)bh->b_data)[(inode->i_num - 1) % INODES_PER_BLOCK];
-	/* 释放缓冲块，并解锁该i节点 */
-	brelse(bh);
-
-    if (S_ISBLK(inode->i_mode)) {
-        int i = inode->i_zone[0];
-        if (blk_size[MAJOR(i)]) {
-            inode->i_size = 1024 * blk_size[MAJOR(i)][MINOR(i)];
-        } else {
-            inode->i_size = 0x7fffffff;
-        }
-    }
-    unlock_inode(inode);
-}
-
-static void write_inode(struct m_inode * inode) {
-    struct super_block *sb;
-    struct buffer_head *bh;
-    int block;
-
-    lock_inode(inode);
-    if (!inode->i_dirt || !inode->i_dev) {
-        unlock_inode(inode);
-        return;
-    }
-    // 不可能没有注册超级块
-    if (!(sb = get_super(inode->i_dev))) {
-        panic("trying to write inode without device");
-    }
-    /* 该i节点所在逻辑块号 = 
-    （启动块 + 超级块）+ i节点位图块数 + 逻辑块位图块数 + （i节点号 - 1）/每块含有的i节点数 */
-    block = 2 + sb->s_imap_blocks + sb->s_zmap_blocks
-        + (inode->i_num - 1) / INODES_PER_BLOCK;
-    if (!(bh = bread(inode->i_dev, block))) {
-        panic("unable to read i-node block");
-    }
-    // 注意这里是模除，取的是该inode在这一个块中的偏移
-    ((struct d_inode *)bh->b_data)[(inode->i_num - 1) % INODES_PER_BLOCK]
-        = *(struct d_inode *)inode;
-    // 只是修改了bh缓冲区，所以置位，inode已经与缓冲区一致所以清位
-    bh->b_dirt = 1;
-    inode->i_dirt = 0;
-
-    brelse(bh);
-    unlock_inode(inode);
 }

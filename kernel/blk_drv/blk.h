@@ -33,6 +33,7 @@ struct blk_dev_struct {
 };
 
 extern struct blk_dev_struct blk_dev[NR_BLK_DEV];
+extern struct request request[NR_REQUEST];
 extern struct task_struct * wait_for_request;
 
 extern int * blk_size[NR_BLK_DEV];
@@ -45,12 +46,20 @@ extern int * blk_size[NR_BLK_DEV];
 	#define DEVICE_ON(device) 
 	#define DEVICE_OFF(device)
 #elif (MAJOR_NR == 2)
+	#define DEVICE_NAME "floppy"
+	#define DEVICE_INTR do_floppy
+	#define DEVICE_REQUEST do_fd_request
+	#define DEVICE_NR(device) ((device) & 3)
+	#define DEVICE_ON(device) floppy_on(DEVICE_NR(device))
+	#define DEVICE_OFF(device) floppy_off(DEVICE_NR(device))
 #elif (MAJOR_NR == 3)
+	/* harddisk: timeout is 6s */
     #define DEVICE_NAME "harddisk"
     #define DEVICE_INTR do_hd
-    #define DEVICE_TIMEOUT hd_timeout
+    #define DEVICE_TIMEOUT HD_TIMER
+	#define TIMEOUT_VALUE 600
     #define DEVICE_REQUEST do_hd_request
-    #define DEVICE_NR(device) (MINOR(device) / 5)
+    #define DEVICE_NR(device) (MINOR(device)>>6)
     #define DEVICE_ON(device)
     #define DEVICE_OFF(device)
 #elif
@@ -63,12 +72,27 @@ extern int * blk_size[NR_BLK_DEV];
 #ifdef DEVICE_INTR
 void (*DEVICE_INTR)(void) = NULL;
 #endif
+
 #ifdef DEVICE_TIMEOUT
-    int DEVICE_TIMEOUT = 0;
-    #define SET_INTR(x) (DEVICE_INTR = (x),DEVICE_TIMEOUT = 200)
+#define SET_TIMER \
+((timer_table[DEVICE_TIMEOUT].expires = jiffies + TIMEOUT_VALUE), \
+(timer_active |= 1<<DEVICE_TIMEOUT))
+
+#define CLEAR_TIMER \
+timer_active &= ~(1<<DEVICE_TIMEOUT)
+
+#define SET_INTR(x) \
+if (DEVICE_INTR = (x)) \
+	SET_TIMER; \
+else \
+	CLEAR_TIMER;
+
 #else
-    #define SET_INTR(x) (DEVICE_INTR = (x))
+
+#define SET_INTR(x) (DEVICE_INTR = (x))
+
 #endif
+
 static void (DEVICE_REQUEST)(void);
 
 static void unlock_buffer(struct buffer_head * bh) {
@@ -95,23 +119,16 @@ static void end_request(int uptodate) {
 	CURRENT = CURRENT->next;
 }
 
-#ifdef DEVICE_TIMEOUT
-    #define CLEAR_DEVICE_TIMEOUT DEVICE_TIMEOUT = 0;
-#else
-    #define CLEAR_DEVICE_TIMEOUT
-#endif
-
 #ifdef DEVICE_INTR
-    #define CLEAR_DEVICE_INTR DEVICE_INTR = 0;
+    #define CLEAR_INTR SET_INTR(NULL)
 #else
-    #define CLEAR_DEVICE_INTR
+    #define CLEAR_INTR
 #endif
 
 #define INIT_REQUEST \
 repeat: \
 	if (!CURRENT) {\
-		CLEAR_DEVICE_INTR \
-		CLEAR_DEVICE_TIMEOUT \
+		CLEAR_INTR \
 		return; \
 	} \
 	if (MAJOR(CURRENT->dev) != MAJOR_NR) \

@@ -8,30 +8,39 @@
  *	Thanks to Alfred Leung for US keyboard patches
  *		Wolfgang Thiel for German keyboard patches
  *		Marc Corsini for the French keyboard
+ *		LeBlanc@mcc.ac.uk for the UK keyboard
+ *		Tommy Thorn (tthorn@daimi.aau.dk) for Danish keyboard
  */
 
 /* KBD_FINNISH for Finnish keyboards
  * KBD_US for US-type
  * KBD_GR for German keyboards
  * KBD_FR for Frech keyboard
+ * KBD_UK for British extended keyboard
+ * KBD_DK for Danish keyboard
  */
-#define KBD_US
 
 .text
+.globl hard_reset_now
 .globl keyboard_interrupt
+.globl kapplic
+.globl kmode
+.globl kleds
+.globl set_leds
 
 /*
  * these are for the keyboard read functions
  */
-size	= 1024		/* must be a power of two ! And MUST be the same
+size	= 2048		/* must be a power of two ! And MUST be the same
 			   as in tty_io.c !!!! */
 head = 4
 tail = 8
 proc_list = 12
 buf = 16
 
-mode:	.byte 0		/* caps, alt, ctrl and shift mode */
-leds:	.byte 2		/* num-lock, caps, scroll-lock mode (nom-lock on) */
+kapplic:	.byte 0
+kmode:	.byte 0		/* caps, alt, ctrl and shift mode */
+kleds:	.byte 2		/* num-lock, caps, scroll-lock mode (nom-lock on) */
 e0:	.byte 0
 
 /*
@@ -40,6 +49,7 @@ e0:	.byte 0
  *  ascii character(s).
  */
 keyboard_interrupt:
+	cld
 	pushl %eax
 	pushl %ebx
 	pushl %ecx
@@ -49,34 +59,41 @@ keyboard_interrupt:
 	movl $0x10,%eax
 	mov %ax,%ds
 	mov %ax,%es
-	movl blankinterval,%eax
-	movl %eax,blankcount
 	xorl %eax,%eax		/* %eax is scan code */
 	inb $0x60,%al
-	cmpb $0xe0,%al
-	je set_e0
-	cmpb $0xe1,%al
-	je set_e1
-	call *key_table(,%eax,4)
-	movb $0,e0
-# 0x61是8255A输出口B的地址，其第7位用于禁止和允许对键盘数据的处理，这段程序的目的是对收到的扫描码做出应答
-# 应答方式就是先禁止键盘，然后立刻重新允许键盘工作
-e0_e1:	inb $0x61,%al
+	pushl %eax			/* push scan code */
+	/* 针对使用8255A的PC标准键盘电路进行硬件复位处理，作用就是对收到的扫描码做出应答
+	 * 方法是首先禁止键盘，然后立刻重新允许键盘工作
+	 * 0x61端口是8255A输出口B的地址，该输出口端口的第7位用于禁止和允许对键盘数据的处理
+	 */
+	inb $0x61,%al
 	jmp 1f
 1:	jmp 1f
-1:	orb $0x80,%al		# 置位禁止键盘
+1:	orb $0x80,%al		
 	jmp 1f
 1:	jmp 1f
-1:	outb %al,$0x61
+1:	outb %al,$0x61		/* 禁止键盘工作 */
 	jmp 1f
 1:	jmp 1f
-1:	andb $0x7F,%al		# 复位允许键盘
-	outb %al,$0x61
-	movb $0x20,%al
-	outb %al,$0x20		# 向8259中断芯片发送EOI（中断结束）信号
-	pushl $0			# 控制台tty号为0，作为参数调用do_tty_interrupt
-	call do_tty_interrupt
-	addl $4,%esp
+1:	andb $0x7F,%al
+	outb %al,$0x61		/* 允许键盘工作 */
+	jmp 1f
+1:	jmp 1f
+1:	movb $0x20,%al
+	outb %al,$0x20		/* 向8259中断芯片发送EOI（中断结束）信号 */
+	popl %eax
+	movl $1,%ebx
+	cmpb $0xE0,%al
+	je end_intr
+	movl $2,%ebx
+	cmpb $0xE1,%al
+	je end_intr
+	sti
+	call key_table(,%eax,4)
+	call do_keyboard_interrupt
+	movl $0,%ebx
+end_intr:
+	movb %bl,e0
 	pop %es
 	pop %ds
 	popl %edx
@@ -84,10 +101,6 @@ e0_e1:	inb $0x61,%al
 	popl %ebx
 	popl %eax
 	iret
-set_e0:	movb $1,e0
-	jmp e0_e1
-set_e1:	movb $2,e0
-	jmp e0_e1
 
 /*
  * This routine fills the buffer with max 8 bytes, taken from
@@ -98,21 +111,21 @@ put_queue:
 	pushl %ecx
 	pushl %edx
 	movl table_list,%edx		# read-queue for console
-	movl head(%edx),%ecx		# tty_queue结构，偏移为4的地方是缓冲区头
+	movl head(%edx),%ecx
 1:	movb %al,buf(%edx,%ecx)
 	incl %ecx
 	andl $size-1,%ecx
 	cmpl tail(%edx),%ecx		# buffer full - discard everything
 	je 3f
-	shrdl $8,%ebx,%eax			# 将ebx中8个比特右移8位到eax
-	je 2f						# 若eax为0，说明已经没有字符了，就跳转
-	shrl $8,%ebx				# 还有字符，将ebx右移8位，继续写缓冲区
+	shrdl $8,%ebx,%eax
+	je 2f
+	shrl $8,%ebx
 	jmp 1b
-2:	movl %ecx,head(%edx)		# 更新头指针
-	movl proc_list(%edx),%ecx	# 要唤醒的进程
+2:	movl %ecx,head(%edx)
+	movl proc_list(%edx),%ecx
 	testl %ecx,%ecx
 	je 3f
-	movl $0,(%ecx)				# 等待进程存在，就置为就绪状态
+	movl $0,(%ecx)				# 唤醒等待该队列的进程
 3:	popl %edx
 	popl %ecx
 	ret
@@ -123,7 +136,7 @@ alt:	movb $0x10,%al
 1:	cmpb $0,e0
 	je 2f
 	addb %al,%al
-2:	orb %al,mode
+2:	orb %al,kmode
 	ret
 unctrl:	movb $0x04,%al
 	jmp 1f
@@ -132,50 +145,68 @@ unalt:	movb $0x10,%al
 	je 2f
 	addb %al,%al
 2:	notb %al
-	andb %al,mode
+	andb %al,kmode
 	ret
 
 lshift:
-	orb $0x01,mode
+	orb $0x01,kmode
 	ret
 unlshift:
-	andb $0xfe,mode
+	andb $0xfe,kmode
 	ret
 rshift:
-	orb $0x02,mode
+	orb $0x02,kmode
 	ret
 unrshift:
-	andb $0xfd,mode
+	andb $0xfd,kmode
 	ret
 
-caps:	testb $0x80,mode
+old_leds:
+	.byte 2
+
+caps:	testb $0x80,kmode
 	jne 1f
-	xorb $4,leds
-	xorb $0x40,mode
-	orb $0x80,mode
+	xorb $4,kleds
+	xorb $0x40,kmode
+	orb $0x80,kmode
 set_leds:
+	movb kleds,%al
+	cmpb old_leds,%al
+	je 1f
+	movb %al,old_leds
 	call kb_wait
 	movb $0xed,%al		/* set leds command */
 	outb %al,$0x60
 	call kb_wait
-	movb leds,%al
+	movb kleds,%al
 	outb %al,$0x60
-	ret
-uncaps:	andb $0x7f,mode
+1:	ret
+uncaps:	andb $0x7f,kmode
 	ret
 scroll:
-	testb $0x03,mode
+	testb $0x03,kmode
 	je 1f
-	call show_mem
+	call _show_mem
 	jmp 2f
-1:	call show_state
-2:	xorb $1,leds
+1:	call _show_state
+2:	xorb $1,kleds
 	jmp set_leds
-num:	xorb $2,leds
+	
+num:	cmpb $0x01,kapplic
+	jne notappl
+	movw $0x0050,%ax
+applkey:
+	shll $16,%eax
+	movw $0x4f1b,%ax
+	xorl %ebx,%ebx
+	jmp put_queue
+ 
+notappl:
+	xorb $2,kleds
 	jmp set_leds
 
 /*
- *  curosr-key/numeric keypad cursor keys are handled here.
+ *  cursor-key/numeric keypad cursor keys are handled here.
  *  checking for numeric keypad etc.
  */
 cursor:
@@ -184,21 +215,29 @@ cursor:
 	cmpb $12,%al
 	ja 1f
 	jne cur2		/* check for ctrl-alt-del */
-	testb $0x0c,mode
+	testb $0x0c,kmode
 	je cur2
-	testb $0x30,mode
-	jne reboot
+	testb $0x30,kmode
+	jne _ctrl_alt_del
 cur2:	cmpb $0x01,e0		/* e0 forces cursor movement */
 	je cur
-	testb $0x02,leds	/* not num-lock forces cursor */
-	je cur
-	testb $0x03,mode	/* shift forces cursor */
+	testb $0x03,kmode	/* shift forces cursor */
 	jne cur
+	cmpb $0x01,kapplic
+	jne notcappl
+	movb appl_table(%eax),%al
+	jmp applkey
+notcappl:
+	testb $0x02,kleds	/* not num-lock forces cursor */
+	je cur
 	xorl %ebx,%ebx
 	movb num_table(%eax),%al
 	jmp put_queue
 1:	ret
 
+/*
+ * cursor keys send ^[ [ x if normal, ^[ O x if application mode
+ */
 cur:	movb cur_table(%eax),%al
 	cmpb $'9,%al
 	ja ok_cur
@@ -206,17 +245,42 @@ cur:	movb cur_table(%eax),%al
 ok_cur:	shll $16,%eax
 	movw $0x5b1b,%ax
 	xorl %ebx,%ebx
+	cmpb $0x01,kapplic
+	jne put_queue
+	movb $0x4f,%ah
 	jmp put_queue
 
-#if defined(KBD_FR)
+#if defined(KBD_FR) /* || defined(KBD_DK) correct, but .. */
 num_table:
-	.ascii "789 456 1230."
+	.ascii "789-456+1230."
 #else
 num_table:
-	.ascii "789 456 1230,"
+	.ascii "789-456+1230,"
 #endif
 cur_table:
-	.ascii "HA5 DGC YB623"
+	.ascii "HA5-DGC+YB623"
+	
+/*	
+    Keypad /         		35	B7	Q
+    Keypad *  (PrtSc)		37	B7	R
+    Keypad NumLock     		45	??	P
+    Keypad 7  (Home)		47	C7	w
+    Keypad 8  (Up arrow)	48	C8	x
+    Keypad 9  (PgUp)		49	C9	y
+    Keypad -			4A	CA	S
+    Keypad 4  (Left arrow)	4B	CB	t
+    Keypad 5			4C	CC	u
+    Keypad 6  (Right arrow)	4D	CD	v
+    Keypad +			4E	CE	l
+    Keypad 1  (End) 		4F	CF	q
+    Keypad 2  (Down arrow)	50	D0	r
+    Keypad 3  (PgDn)		51	D1	s
+    Keypad 0  (Ins)		52	D2	p
+    Keypad .  (Del) 		53	D3	n
+*/    
+ 
+appl_table:
+	.ascii "wxyStuvlqrspn"
 
 /*
  * this routine handles function keys
@@ -232,7 +296,7 @@ func:
 	cmpb $11,%al
 	ja end_func
 ok_func:
-	testb $0x10,mode
+	testb $0x10,kmode
 	jne alt_func
 	cmpl $4,%ecx		/* check that there is enough room */
 	jl end_func
@@ -241,7 +305,7 @@ ok_func:
 	jmp put_queue
 alt_func:
 	pushl %eax
-	call change_console
+	call _change_console
 	popl %eax
 end_func:
 	ret
@@ -321,7 +385,6 @@ key_map:
 	.byte '<
 	.fill 10,1,0
 
-
 shift_map:
 	.byte 0,27
 	.ascii "!@#$%^&*()_+"
@@ -336,6 +399,56 @@ shift_map:
 	.byte '-,0,0,0,'+	/* 4A-4E */
 	.byte 0,0,0,0,0,0,0	/* 4F-55 */
 	.byte '>
+	.fill 10,1,0
+
+alt_map:
+	.byte 0,0
+	.ascii "\0@\0$\0\0{[]}\\\0"
+	.byte 0,0
+	.byte 0,0,0,0,0,0,0,0,0,0,0
+	.byte '~,13,0
+	.byte 0,0,0,0,0,0,0,0,0,0,0
+	.byte 0,0
+	.byte 0,0,0,0,0,0,0,0,0,0,0
+	.byte 0,0,0,0		/* 36-39 */
+	.fill 16,1,0		/* 3A-49 */
+	.byte 0,0,0,0,0		/* 4A-4E */
+	.byte 0,0,0,0,0,0,0	/* 4F-55 */
+	.byte '|
+	.fill 10,1,0
+
+#elif defined(KBD_UK)
+
+key_map:
+	.byte 0,27
+	.ascii "1234567890-="
+	.byte 127,9
+	.ascii "qwertyuiop[]"
+	.byte 13,0
+	.ascii "asdfghjkl;'"
+	.byte '`,0
+	.ascii "#zxcvbnm,./"
+	.byte 0,'*,0,32		/* 36-39 */
+	.fill 16,1,0		/* 3A-49 */
+	.byte '-,0,0,0,'+	/* 4A-4E */
+	.byte 0,0,0,0,0,0,0	/* 4F-55 */
+	.ascii "\\"
+	.fill 10,1,0
+
+shift_map:
+	.byte 0,27
+	.ascii "!\"#$%^&*()_+"
+	.byte 127,9
+	.ascii "QWERTYUIOP{}"
+	.byte 13,0
+	.ascii "ASDFGHJKL:@"
+	.byte '~,0
+	.ascii "~ZXCVBNM<>?"
+	.byte 0,'*,0,32		/* 36-39 */
+	.fill 16,1,0		/* 3A-49 */
+	.byte '-,0,0,0,'+	/* 4A-4E */
+	.byte 0,0,0,0,0,0,0	/* 4F-55 */
+	.byte '|
 	.fill 10,1,0
 
 alt_map:
@@ -372,7 +485,6 @@ key_map:
 	.byte '<
 	.fill 10,1,0
 
-
 shift_map:
 	.byte 0,27
 	.ascii "!\"#$%&/()=?`"
@@ -404,7 +516,6 @@ alt_map:
 	.byte 0,0,0,0,0,0,0	/* 4F-55 */
 	.byte '|
 	.fill 10,1,0
-
 
 #elif defined(KBD_FR)
 
@@ -456,6 +567,56 @@ alt_map:
 	.byte '|
 	.fill 10,1,0
 
+#elif defined(KBD_DK)
+
+key_map:
+	.byte 0,27
+	.ascii "1234567890+'"
+	.byte 127,9
+	.ascii "qwertyuiop"
+	.byte 134,0,13,0	/* This is IBM-PC, change it to latin-1 */
+	.ascii "asdfghjkl"
+	.byte 145,155,0,0
+	.ascii "'zxcvbnm,.-"
+	.byte 0,'*,0,32		/* 36-39 */
+	.fill 16,1,0		/* 3A-49 */
+	.byte '-,0,0,0,'+	/* 4A-4E */
+	.byte 0,0,0,0,0,0,0	/* 4F-55 */
+	.byte '<
+	.fill 10,1,0
+
+shift_map:
+	.byte 0,27
+	.ascii "!\"#$%&/()=?`"
+	.byte 127,9
+	.ascii "QWERTYUIOP"
+	.byte 143,94,13,0
+	.ascii "ASDFGHJKL"
+	.byte 146,157,0,0
+	.ascii "*ZXCVBNM;:_"
+	.byte 0,'*,0,32		/* 36-39 */
+	.fill 16,1,0		/* 3A-49 */
+	.byte '-,0,0,0,'+	/* 4A-4E */
+	.byte 0,0,0,0,0,0,0	/* 4F-55 */
+	.byte '>
+	.fill 10,1,0
+
+alt_map:
+	.byte 0,0
+	.ascii "\0@\0$\0\0{[]}\0"
+	.byte '|,0,0
+	.byte 0,0,0,0,0,0,0,0,0,0,0
+	.byte '~,13,0
+	.byte 0,0,0,0,0,0,0,0,0,0,0
+	.byte 0,0
+	.byte 0,0,0,0,0,0,0,0,0,0,0
+	.byte 0,0,0,0		/* 36-39 */
+	.fill 16,1,0		/* 3A-49 */
+	.byte 0,0,0,0,0		/* 4A-4E */
+	.byte 0,0,0,0,0,0,0	/* 4F-55 */
+	.ascii "\\"
+	.fill 10,1,0
+
 #else
 #error "KBD-type not defined"
 #endif
@@ -465,30 +626,26 @@ alt_map:
  */
 do_self:
 	lea alt_map,%ebx
-	testb $0x20,mode		/* alt-gr */
+	testb $0x20,kmode		/* alt-gr */
 	jne 1f
 	lea shift_map,%ebx
-	testb $0x03,mode
+	testb $0x0f,kmode
 	jne 1f
 	lea key_map,%ebx
 1:	movb (%ebx,%eax),%al
 	orb %al,%al
 	je none
-	testb $0x4c,mode		/* ctrl or caps */
+	testb $0x4c,kmode		/* ctrl or caps */
 	je 2f
 	cmpb $'a,%al
 	jb 2f
 	cmpb $'},%al
 	ja 2f
 	subb $32,%al
-2:	testb $0x0c,mode		/* ctrl */
+2:	testb $0x0c,kmode		/* ctrl */
 	je 3f
-	cmpb $64,%al
-	jb 3f
-	cmpb $64+32,%al
-	jae 3f
-	subb $64,%al
-3:	testb $0x10,mode		/* left alt */
+	andb $0x1f,%al
+3:	testb $0x10,kmode		/* left alt */
 	je 4f
 	orb $0x80,%al
 4:	andl $0xff,%eax
@@ -497,16 +654,49 @@ do_self:
 none:	ret
 
 /*
- * minus has a routine of it's own, as a 'E0h' before
- * the scan code for minus means that the numeric keypad
+ * slash and star have routines of their own, as a 'E0h' before
+ * the scan code for slash means that the numeric keypad
  * slash was pushed.
  */
-minus:	cmpb $1,e0
+slash:	cmpb $1,e0
 	jne do_self
+	cmpb $1,kapplic
+	jne notmapplic
+	movw $'Q,%ax
+	jmp applkey
+	
+notmapplic:
 	movl $'/,%eax
 	xorl %ebx,%ebx
 	jmp put_queue
 
+star:	cmpb $1,kapplic
+	jne do_self
+	movw $'R,%ax
+	jmp applkey
+	
+notsapplic:
+	movl $'*,%eax
+	xorl %ebx,%ebx
+	jmp put_queue
+
+enter:	cmpb $1,e0
+	jne do_self
+	cmpb $1,kapplic
+	jne do_self
+	movw $'M,%ax
+	jmp applkey
+	
+minus:	cmpb $1,kapplic
+	jne do_self
+	movw $'S,%ax
+	jmp applkey
+	
+plus:	cmpb $1,kapplic
+	jne do_self
+	movw $'l,%ax
+	jmp applkey
+	
 /*
  * This table decides which routine to call when a scan-code has been
  * gotten. Most routines just call do_self, or none, depending if
@@ -520,19 +710,19 @@ key_table:
 	.long do_self,do_self,do_self,do_self	/* 10-13 q w e r */
 	.long do_self,do_self,do_self,do_self	/* 14-17 t y u i */
 	.long do_self,do_self,do_self,do_self	/* 18-1B o p } ^ */
-	.long do_self,ctrl,do_self,do_self	/* 1C-1F enter ctrl a s */
+	.long enter,ctrl,do_self,do_self	/* 1C-1F enter ctrl a s */
 	.long do_self,do_self,do_self,do_self	/* 20-23 d f g h */
 	.long do_self,do_self,do_self,do_self	/* 24-27 j k l | */
 	.long do_self,do_self,lshift,do_self	/* 28-2B { para lshift , */
 	.long do_self,do_self,do_self,do_self	/* 2C-2F z x c v */
 	.long do_self,do_self,do_self,do_self	/* 30-33 b n m , */
-	.long do_self,minus,rshift,do_self	/* 34-37 . - rshift * */
+	.long do_self,slash,rshift,star		/* 34-37 . - rshift * */
 	.long alt,do_self,caps,func		/* 38-3B alt sp caps f1 */
 	.long func,func,func,func		/* 3C-3F f2 f3 f4 f5 */
 	.long func,func,func,func		/* 40-43 f6 f7 f8 f9 */
 	.long func,num,scroll,cursor		/* 44-47 f10 num scr home */
-	.long cursor,cursor,do_self,cursor	/* 48-4B up pgup - left */
-	.long cursor,cursor,do_self,cursor	/* 4C-4F n5 right + end */
+	.long cursor,cursor,minus,cursor	/* 48-4B up pgup - left */
+	.long cursor,cursor,plus,cursor		/* 4C-4F n5 right + end */
 	.long cursor,cursor,cursor,cursor	/* 50-53 dn pgdn ins del */
 	.long none,none,do_self,func		/* 54-57 sysreq ? < f11 */
 	.long func,none,none,none		/* 58-5B f12 ? ? ? */
@@ -580,22 +770,35 @@ key_table:
 
 /*
  * kb_wait waits for the keyboard controller buffer to empty.
- * there is no timeout - if the buffer doesn't empty, we hang.
  */
 kb_wait:
 	pushl %eax
+	pushl %ebx
+	movl $10000,%ebx
 1:	inb $0x64,%al
 	testb $0x02,%al
+	je 2f
+	decl %ebx
 	jne 1b
+2:	popl %ebx
 	popl %eax
 	ret
+
+no_idt:
+	.long 0,0
 /*
  * This routine reboots the machine by asking the keyboard
- * controller to pulse the reset-line low.
+ * controller to pulse the reset-line low. We try that for a while,
+ * and if it doesn't work, we do some other stupid things.
  */
-reboot:
-	call kb_wait
+hard_reset_now:
+	sti
+	movl $100,%ebx
+1:	call kb_wait
 	movw $0x1234,0x472	/* don't do memory check */
-	movb $0xfc,%al		/* pulse reset and A20 low */
+	movb $0xfe,%al		/* pulse reset low */
 	outb %al,$0x64
-die:	jmp die
+	decl %ebx
+	jne 1b
+	lidt no_idt		/* zero-length idt: should triple-fault */
+	jmp hard_reset_now

@@ -35,7 +35,6 @@ void release(struct task_struct *p) {
 				p->p_pptr->p_cptr = p->p_osptr;
 			}
 			free_page((long) p);
-			schedule();
 			return;
 		}
 	}
@@ -130,10 +129,12 @@ void audit_ptree() {
  * priv: 强制发送信号的标志（即不需要考虑进程用户属性或级别）
  **/
 static inline int send_sig(long sig, struct task_struct * p,int priv) {		
-	if (!p)
+	if (!p || (sig < 0) || (sig > 32))
 		return -EINVAL;
 	if (!priv && (current->euid != p->euid) && !suser())
 		return -EPERM;
+	if (!sig)
+		return 0;
 	if ((sig == SIGKILL) || (sig == SIGCONT)) {
 		if (p->state == TASK_STOPPED)
 			p->state = TASK_RUNNING;
@@ -142,13 +143,17 @@ static inline int send_sig(long sig, struct task_struct * p,int priv) {
 		p->signal &= ~( (1<<(SIGSTOP-1)) | (1<<(SIGTSTP-1)) |
 				(1<<(SIGTTIN-1)) | (1<<(SIGTTOU-1)) );
 	}
-	// 发送的信号是被忽略的，就不用发送了
-	if ((int) p->sigaction[sig-1].sa_handler == 1)
-		return 0;
 	// 如果是让进程停止的信号，说明是让接受信号的进程p停止运行，因此需要复位继续运行的信号
 	if ((sig >= SIGSTOP) && (sig <= SIGTTOU)) 
 		p->signal &= ~(1<<(SIGCONT-1));
 	p->signal |= (1 << (sig - 1));
+	if (p->flags & PF_PTRACED) {
+		p->exit_code = sig;
+		if (p->p_pptr != NULL && p->p_pptr->state == TASK_INTERRUPTIBLE)
+			p->p_pptr->state = TASK_RUNNING;
+		if (p->state == TASK_INTERRUPTIBLE || p->state == TASK_RUNNING)
+			p->state = TASK_STOPPED;
+	}
 	return 0;
 }
 
@@ -185,27 +190,30 @@ int kill_pg(int pgrp, int sig, int priv) {
 int kill_proc(int pid, int sig, int priv) {
  	struct task_struct **p;
 
-	if (sig<1 || sig>32)
+	if (sig < 0 || sig > 32)
 		return -EINVAL;
 	for (p = &LAST_TASK ; p > &FIRST_TASK ; --p)
 		if ((*p)->pid == pid)
-			return(sig ? send_sig(sig,*p,priv) : 0);
+			return(sig ? send_sig(sig, *p, priv) : 0);
 	return(-ESRCH);
 }
 
 int sys_kill(int pid, int sig) {
 	struct task_struct **p = NR_TASKS + task;
-	int err, retval = 0;
+	int err, retval = 0, count = 0;
 
 	// pid为0，表示当前进程是进程组组长，因此需要给组内所有进程强制发送信号sig
 	if (!pid)
-		return(kill_pg(current->pid, sig, 0));
+		return(kill_pg(current->pgrp, sig, 0));
 	// pid为-1，表示信号要发送给除1号进程外的所有进程，如果发生错误，只会记录最后一个错误
 	if (pid == -1) {
 		while (--p > &FIRST_TASK)
-			if ((err = send_sig(sig, *p, 0)))
-				retval = err;
-		return(retval);
+			if ((*p)->pid > 1 && *p != current) {
+				++count;
+				if ((err = send_sig(sig, *p, 0)) != -EPERM)
+					retval = err;
+			}
+		return(count ? retval : -ESRCH);
 	}
 	// pid < -1，表示信号要发送给进程组号为-pid的所有进程
 	if (pid < 0) 
@@ -262,6 +270,7 @@ void do_exit(long code) {
 	current->library = NULL;
 	current->state = TASK_ZOMBIE;
 	current->exit_code = code;
+	current->rss = 0;
 
 	if ((current->p_pptr->pgrp != current->pgrp) && 
 		(current->p_pptr->session == current->session) && 
@@ -271,32 +280,28 @@ void do_exit(long code) {
 		kill_pg(current->pgrp, SIGCONT, 1);
 	}
 
-	current->p_pptr->signal |= (1 << (SIGCHLD - 1));
+	send_sig(SIGCHLD, current->p_pptr, 1);
 
 	// 当前进程有子进程
-	if ((p = current->p_cptr)) {
-		while (1) {
-			// 1号进程成为子进程的父进程
-			p->p_pptr = task[1];
-			if (p->state == TASK_ZOMBIE)
-				task[1]->signal |= (1 << (SIGCHLD - 1));
-			if ((p->pgrp != current->pgrp) &&
-			    (p->session == current->session) &&
-			    is_orphaned_pgrp(p->pgrp) &&
-			    has_stopped_jobs(p->pgrp)) {
-				kill_pg(p->pgrp,SIGHUP,1);
-				kill_pg(p->pgrp,SIGCONT,1);
-			}
-			// 子进程有兄弟进程，则循环处理
-			if (p->p_osptr) {
-				p = p->p_osptr;
-				continue;
-			}
-			p->p_osptr = task[1]->p_cptr;
-			task[1]->p_cptr->p_ysptr = p;
-			task[1]->p_cptr = current->p_cptr;
-			current->p_cptr = 0;
-			break;
+	while (p = current->p_cptr) {
+		// 指向下一个子进程
+		current->p_cptr = p->p_osptr;
+		p->p_ysptr = NULL;
+		p->flags &= ~PF_PTRACED;
+		// 1号进程成为子进程的父进程
+		p->p_pptr = task[1];
+		p->p_osptr = task[1]->p_cptr;
+		task[1]->p_cptr->p_ysptr = p;
+		task[1]->p_cptr = p;
+		if (p->state == TASK_ZOMBIE)
+			task[1]->signal |= (1 << (SIGCHLD - 1));
+
+		if ((p->pgrp != current->pgrp) &&
+			(p->session == current->session) &&
+			is_orphaned_pgrp(p->pgrp) &&
+			has_stopped_jobs(p->pgrp)) {
+			kill_pg(p->pgrp, SIGHUP, 1);
+			kill_pg(p->pgrp, SIGCONT, 1);
 		}
 	}
 	if (current->leader) {
@@ -307,7 +312,7 @@ void do_exit(long code) {
 			tty = TTY_TABLE(current->tty);
 			if (tty->pgrp > 0)
 				kill_pg(tty->pgrp, SIGHUP, 1);
-			tty->pgrp = 0;
+			tty->pgrp = -1;
 			tty->session = 0;
 		}
 		for (p = &LAST_TASK; p > &FIRST_TASK; --p)
@@ -335,7 +340,8 @@ int sys_waitpid(pid_t pid, unsigned long * stat_addr, int options) {
 	struct task_struct *p;
 	unsigned long oldblocked;
 
-	verify_area(stat_addr, 4);
+	if (state_addr)
+		verify_area(stat_addr, 4);
 repeat:
 	flag = 0;
 	for (p = current->p_cptr; p; p = p->p_osptr) {
@@ -358,15 +364,19 @@ repeat:
 				if (!(options & WUNTRACED) ||
 					!p->exit_code)
 					continue;
-				put_fs_long((p->exit_code << 8) | 0x7f,
-					stat_addr);
+				if (stat_addr)
+					put_fs_long((p->exit_code << 8) | 0x7f,
+						stat_addr);
 				p->exit_code = 0;
 				return p->pid;
 			case TASK_ZOMBIE:
-				current->cutime += p->utime;
-				current->cstime += p->stime;
+				current->cutime += p->utime + p->cutime;
+				current->cstime += p->stime + p->cstime;
+				current->cmin_flt += p->min_flt + p->cmin_flt;
+				current->cmaj_flt += p->maj_flt + p->cmaj_flt;
 				flag = p->pid;
-				put_fs_long(p->exit_code, stat_addr);
+				if (stat_addr)
+					put_fs_long(p->exit_code, stat_addr);
 				release(p);
 #ifdef DEBUG_PROC_TREE
 				audit_ptree();
@@ -382,7 +392,7 @@ repeat:
 			return 0;
 		current->state = TASK_INTERRUPTIBLE;
 		oldblocked = current->blocked;
-		current->blocked = ~(1 << (SIGCHLD - 1));
+		current->blocked &= ~(1 << (SIGCHLD - 1));
 		schedule();
 		current->blocked = oldblocked;
 		if (current->signal & ~(current->blocked | (1 << (SIGCHLD - 1)))) {

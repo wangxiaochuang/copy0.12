@@ -33,6 +33,14 @@
 #define TIOCSSOFTCAR	0x541A
 #define FIONREAD	0x541B
 #define TIOCINQ		FIONREAD
+#define TIOCLINUX	0x541C
+
+struct winsize {
+	unsigned short ws_row;
+	unsigned short ws_col;
+	unsigned short ws_xpixel;
+	unsigned short ws_ypixel;
+};
 
 #define NCC 8
 struct termio {

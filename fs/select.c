@@ -19,8 +19,10 @@ typedef struct {
 	struct task_struct ** wait_address;
 } wait_entry;
 
-typedef struct {
-	int nr;
+typedef struct select_table_struct {
+	int nr, woken;
+    struct task_struct *current;
+    struct select_table_struct *next_table;
 	wait_entry entry[NR_OPEN * 3];
 } select_table;
 
@@ -137,6 +139,8 @@ int do_select(fd_set in, fd_set out, fd_set ex,
     }
 repeat:
     wait_table.nr = 0;
+    wait_table.woken = 0;
+    wait_table.curr
     *inp = *outp = *exp = 0;
     count = 0;
     mask = 1;
@@ -177,7 +181,11 @@ int sys_select( unsigned long *buffer ) {
     struct timeval *tvp;
     unsigned long timeout;
     
-    mask = ~((~0) << get_fs_long(buffer++));
+    mask = get_fs_long(buffer++);
+    if (mask >= 32)
+        mask = ~0;
+    else
+        mask = ~((~0) << mask);
     inp = (fd_set *) get_fs_long(buffer++);
     outp = (fd_set *) get_fs_long(buffer++);
     exp = (fd_set *) get_fs_long(buffer++);

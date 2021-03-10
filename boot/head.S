@@ -87,12 +87,12 @@ ignore_int:
     iret
 
 after_page_tables:
+    call setup_paging
     pushl $0
     pushl $0
     pushl $0
-    pushl $L6
-    pushl $main
-    jmp setup_paging
+    cld
+    call start_kernel
 L6:
     jmp L6
 

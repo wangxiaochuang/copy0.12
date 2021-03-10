@@ -22,19 +22,11 @@ int sys_break() {
 	return -ENOSYS;
 }
 
-int sys_ptrace() {
-	return -ENOSYS;
-}
-
 int sys_stty() {
 	return -ENOSYS;
 }
 
 int sys_gtty() {
-	return -ENOSYS;
-}
-
-int sys_rename() {
 	return -ENOSYS;
 }
 
@@ -153,6 +145,7 @@ int sys_setreuid(int ruid, int euid) {
 int sys_setuid(int uid) {
 	if (suser())
 		current->uid = current->euid = current->suid = uid;
+    // 对于普通用户，只能设置所属进程的有效id
 	else if ((uid == current->uid) || (uid == current->suid))
 		current->euid = uid;
 	else
@@ -329,11 +322,15 @@ int sys_getrusage(int who, struct rusage *ru) {
 		r.ru_utime.tv_usec = CT_TO_USECS(current->utime);
 		r.ru_stime.tv_sec = CT_TO_SECS(current->stime);
 		r.ru_stime.tv_usec = CT_TO_USECS(current->stime);
+        r.ru_minflt = current->min_flt;
+        r.ru_majflt = current->maj_flt;
 	} else {
 		r.ru_utime.tv_sec = CT_TO_SECS(current->cutime);
 		r.ru_utime.tv_usec = CT_TO_USECS(current->cutime);
 		r.ru_stime.tv_sec = CT_TO_SECS(current->cstime);
 		r.ru_stime.tv_usec = CT_TO_USECS(current->cstime);
+        r.ru_minflt = current->cmin_flt;
+        r.ru_majflt = current->cmaj_flt;
 	}
     lp = (unsigned long *) &r;
     // 做个界限值使用

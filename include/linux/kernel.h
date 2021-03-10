@@ -11,7 +11,6 @@ extern void sysbeepstop(void);          /* 停止蜂鸣 */
 extern void blank_screen(void);         /* 黑屏处理 */
 extern void unblank_screen(void);       /* 恢复被黑屏的屏幕 */
 
-extern int beepcount;       /* 蜂鸣时间滴答计数 */
 extern int hd_timeout;      /* 硬盘超时滴答值 */
 extern int blankinterval;   /* 设定的屏幕黑屏间隔时间 */
 extern int blankcount;      /* 黑屏时间计数 */

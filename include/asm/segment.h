@@ -35,6 +35,37 @@ static inline void put_fs_long(unsigned long val,unsigned long * addr)
 	__asm__ ("movl %0,%%fs:%1"::"r" (val),"m" (*addr));
 }
 
+static inline void memcpy_tofs(void *to, void *from, unsigned long n) {
+	__asm__("cld\n\t"
+		"push %%es\n\t"
+		"push %%fs\n\t"
+		"pop %%es\n\t"			// es变成fs的值，因为movs*指令的目的操作数是 es:edi
+		"testb $1, %%cl\n\t"	// 位0是1，就移动一个字节
+		"je 1f\n\t"
+		"movsb\n"
+		"1:\ttestb $2, %%cl\n\t"
+		"je 2f\n\t"				// 位1是1，就移动两个字节
+		"movsw\n"
+		"2:\tshrl $2, %%ecx\n\t"	// cl右移2位，总体目的是要按双字进行移动
+		"rep; movsl\n\t"
+		"pop %%es"
+		::"c" (n), "D" ((long) to), "S" ((long) from));
+}
+
+static inline void memcpy_fromfs(void * to, void * from, unsigned long n) {
+	__asm__("cld\n\t"
+		"testb $1, %%cl\n\t"
+		"je 1f\n\t"
+		"fs; movsb\n"
+		"1:\ttestb $2, %%cl\n\t"
+		"je 2f\n\t"
+		"fs; movsw\n"
+		"2:\tshrl $2, %%ecx\n\t"
+		"rep ; fs ; movsl"
+		::"c" (n), "D" ((long) to), "S" ((long) from));
+	)
+}
+
 /**
  * 取fs段寄存器值(选择符)
  * @retval		fs段寄存器值

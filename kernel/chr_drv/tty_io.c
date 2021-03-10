@@ -30,6 +30,7 @@ int is_orphaned_pgrp(int pgrp);
 #define I_CRNL(tty)     _I_FLAG((tty),ICRNL)
 #define I_NOCR(tty)     _I_FLAG((tty),IGNCR)
 #define I_IXON(tty)     _I_FLAG((tty),IXON)
+#define I_STRP(tty)		_I_FLAG((tty),ISTRIP)
 
 #define O_POST(tty)	_O_FLAG((tty),OPOST)
 #define O_NLCR(tty)	_O_FLAG((tty),ONLCR)
@@ -57,7 +58,7 @@ struct tty_struct tty_table[256];       // tty表终端结构数组，缓冲
 /**
  * 所有终端的缓冲区都放在tty_queues结构里
  *  8个虚拟控制台终端占用开头24项
- *  2个串行终端占用随后的6项
+ *  4个串行终端占用随后的12项
  *  4个主伪终端占用随后的12项
  *  4个从伪终端占用随后的12项
  **/
@@ -69,7 +70,7 @@ struct tty_struct tty_table[256];       // tty表终端结构数组，缓冲
 /**
  * 各种类型终端使用的tty结构都存放在tty_table中
  *  8个虚拟控制台终端占用开头64项（0 - 63）
- *  2个串行终端占用随后的2项（64 - 65）
+ *  4个串行终端占用随后的4项（64 - 67）
  *  4个主伪终端占用从128开始的随后64项（128 - 191）
  *  4个从伪终端占用从192开始的随后64项（192 - 255）
  **/
@@ -110,59 +111,53 @@ static void sleep_if_full(struct tty_queue * queue) {
 	sti();
 }
 
-void copy_to_cooked(struct tty_struct * tty)
-{
-	signed char c;
+void copy_to_cooked(struct tty_struct * tty) {
+	unsigned char c;
 
-	if (!(tty->read_q || tty->write_q || tty->secondary)) {
+	if (!(tty && tty->write && tty->read_q &&
+	    tty->write_q && tty->secondary)) {
 		printk("copy_to_cooked: missing queues\n\r");
 		return;
 	}
 	while (1) {
-		if (EMPTY(tty->read_q)) {
+		if (EMPTY(tty->read_q))
 			break;
-		}
 		if (FULL(tty->secondary)) {
+			if (tty->secondary->proc_list)
+				if (tty->secondary->proc_list != current)
+					current->counter = 0;
 			break;
 		}
 		GETCH(tty->read_q,c);
+		if (I_STRP(tty))
+			c &= 0x7f;
 		if (c==13) {
-			// 回车转换行
 			if (I_CRNL(tty))
 				c=10;
-			// 忽略回车
 			else if (I_NOCR(tty))
 				continue;
-		// 换行转回车
 		} else if (c==10 && I_NLCR(tty))
 			c=13;
-		// 大写转小写
 		if (I_UCLC(tty))
-			c = tolower(c);
-		// 已设置规范模式，则如下处理
+			c=tolower(c);
 		if (L_CANON(tty)) {
-			// 如果是键盘终止控制符，则对已输入的当前字符执行删除处理
 			if ((KILL_CHAR(tty) != _POSIX_VDISABLE) &&
 			    (c==KILL_CHAR(tty))) {
 				/* deal with killing the input line */
 				while(!(EMPTY(tty->secondary) ||
-				        (c=LAST(tty->secondary))==10 ||
-				        ((EOF_CHAR(tty) != _POSIX_VDISABLE) &&
+					(c=LAST(tty->secondary))==10 ||
+					((EOF_CHAR(tty) != _POSIX_VDISABLE) &&
 					 (c==EOF_CHAR(tty))))) {
-				    // 已设置本地回显
 					if (L_ECHO(tty)) {
-						// 既然是删除已输入字符，则向写队列放入擦除字符
 						if (c<32)
-							// 如果是控制字符则需要用两个字节表示
 							PUTCH(127,tty->write_q);
 						PUTCH(127,tty->write_q);
-						tty->write(tty);
+						TTY_WRITE_FLUSH(tty);
 					}
 					DEC(tty->secondary->head);
 				}
 				continue;
 			}
-			// 如果是删除控制字符
 			if ((ERASE_CHAR(tty) != _POSIX_VDISABLE) &&
 			    (c==ERASE_CHAR(tty))) {
 				if (EMPTY(tty->secondary) ||
@@ -174,44 +169,36 @@ void copy_to_cooked(struct tty_struct * tty)
 					if (c<32)
 						PUTCH(127,tty->write_q);
 					PUTCH(127,tty->write_q);
-					tty->write(tty);
+					TTY_WRITE_FLUSH(tty);
 				}
 				DEC(tty->secondary->head);
 				continue;
 			}
 		}
-		// 这个标志表示终端停止/开始输出控制字符起作用，否则停止和开始字符做一般字符供进程读取
 		if (I_IXON(tty)) {
-			// 是停止标志，则暂停tty输出，同时丢弃该字符
 			if ((STOP_CHAR(tty) != _POSIX_VDISABLE) &&
 			    (c==STOP_CHAR(tty))) {
 				tty->stopped=1;
-				tty->write(tty);
 				continue;
 			}
-			// 是开始标志，则恢复tty输出，同时丢弃该字符
 			if ((START_CHAR(tty) != _POSIX_VDISABLE) &&
 			    (c==START_CHAR(tty))) {
 				tty->stopped=0;
-				tty->write(tty);
+				TTY_WRITE_FLUSH(tty);
 				continue;
 			}
 		}
-		// 这个标志表示键盘可以产生信号，给当前进程所在进程组的所有进程
 		if (L_ISIG(tty)) {
-			// ^C 键盘中断符
 			if ((INTR_CHAR(tty) != _POSIX_VDISABLE) &&
 			    (c==INTR_CHAR(tty))) {
 				kill_pg(tty->pgrp, SIGINT, 1);
 				continue;
 			}
-			// ^\ 退出符
 			if ((QUIT_CHAR(tty) != _POSIX_VDISABLE) &&
 			    (c==QUIT_CHAR(tty))) {
 				kill_pg(tty->pgrp, SIGQUIT, 1);
 				continue;
 			}
-			// ^Z 暂停符
 			if ((SUSPEND_CHAR(tty) != _POSIX_VDISABLE) &&
 			    (c==SUSPEND_CHAR(tty))) {
 				if (!is_orphaned_pgrp(tty->pgrp))
@@ -219,30 +206,27 @@ void copy_to_cooked(struct tty_struct * tty)
 				continue;
 			}
 		}
-		// 如果该字符时换行符（10），或者文件结束符EOF（4，^D），表示一行字符处理完了
-		// 把辅助缓冲队列中的当前行数增1
 		if (c==10 || (EOF_CHAR(tty) != _POSIX_VDISABLE &&
-			      c==EOF_CHAR(tty)))
+		    c==EOF_CHAR(tty)))
 			tty->secondary->data++;
-		// 设置了回显
-		if (L_ECHO(tty)) {
-			if (c==10) {
-				PUTCH(10,tty->write_q);
-				PUTCH(13,tty->write_q);
-			// 是控制字符就显示字符^和c+64字符（即：^C、^H等）
-			} else if (c<32) {
-				if (L_ECHOCTL(tty)) {
-					PUTCH('^',tty->write_q);
-					PUTCH(c+64,tty->write_q);
-				}
+		if ((L_ECHO(tty) || L_ECHONL(tty)) && (c==10)) {
+			PUTCH(10,tty->write_q);
+			PUTCH(13,tty->write_q);
+		} else if (L_ECHO(tty)) {
+			if (c<32 && L_ECHOCTL(tty)) {
+				PUTCH('^',tty->write_q);
+				PUTCH(c+64,tty->write_q);
 			} else
 				PUTCH(c,tty->write_q);
-			tty->write(tty);
 		}
 		PUTCH(c,tty->secondary);
+		TTY_WRITE_FLUSH(tty);
 	}
-	// 退出循环，唤醒等待该辅助队列的接触
-	wake_up(&tty->secondary->proc_list);
+	TTY_WRITE_FLUSH(tty);
+	if (!EMPTY(tty->secondary))
+		wake_up(&tty->secondary->proc_list);
+	if (LEFT(tty->write_q) > TTY_BUF_SIZE/2)
+		wake_up(&tty->write_q->proc_list);
 }
 
 void do_tty_interrupt(int tty) {
@@ -403,9 +387,8 @@ int tty_write(unsigned channel, char *buf, int nr) {
 void tty_init(void) {
     int i;
 
-    for (i = 0; i < QUEUES; i++) {
+    for (i = 0; i < QUEUES; i++)
         tty_queues[i] = (struct tty_queue) {0, 0, 0, 0, ""};
-    }
     /**
      * 串行终端的读写队列，其data字段设置为串行端口基地址
      *  串口1：0x3f8
@@ -415,11 +398,16 @@ void tty_init(void) {
     rs_queues[1] = (struct tty_queue) {0x3f8, 0, 0, 0, ""};
     rs_queues[3] = (struct tty_queue) {0x2f8, 0, 0, 0, ""};
     rs_queues[4] = (struct tty_queue) {0x2f8, 0, 0, 0, ""};
+    rs_queues[6] = (struct tty_queue) {0x3e8, 0, 0, 0, ""};
+    rs_queues[7] = (struct tty_queue) {0x3e8, 0, 0, 0, ""};
+    rs_queues[9] = (struct tty_queue) {0x2e8, 0, 0, 0, ""};
+    rs_queues[10] = (struct tty_queue) {0x2e8, 0, 0, 0, ""};
 
     for (i = 0; i < 256; i++) {
         tty_table[i] = (struct tty_struct) {
             {0, 0, 0, 0, 0, INIT_C_CC},
-            0, 0, 0, NULL, NULL, NULL, NULL
+            -1, 0, 0, 0, {0, 0, 0, 0},
+			NULL, NULL, NULL, NULL
         };
     }
     con_init();
@@ -427,13 +415,15 @@ void tty_init(void) {
         con_table[i] = (struct tty_struct) {
             {ICRNL,
             OPOST|ONLCR,
-            0,
-            IXON | ISIG | ICANON | ECHO | ECHOCTL | ECHOKE,
+			B38400 | CS8,
+			IXON | ISIG | ICANON | ECHO | ECHOCTL | ECHOKE,
             0,
             INIT_C_CC},
+			-1,
             0,
             0,
             0,
+			{video_num_lines, video_num_columns, 0, 0},
             con_write,
             con_queues + i*3 + 0,
             con_queues + i*3 + 1,
@@ -448,9 +438,11 @@ void tty_init(void) {
 			0,
 			0,
 			INIT_C_CC},
+			-1,
 			0,
 			0,
 			0,
+			{25, 80, 0, 0},
 			rs_write,
 			rs_queues+0+i*3,rs_queues+1+i*3,rs_queues+2+i*3
 		};
@@ -463,9 +455,11 @@ void tty_init(void) {
 			0,
 			0,
 			INIT_C_CC},
+			-1,
 			0,
 			0,
 			0,
+			{25, 80, 0, 0},
 			mpty_write,
 			mpty_queues+0+i*3,mpty_queues+1+i*3,mpty_queues+2+i*3
 		};
@@ -476,9 +470,11 @@ void tty_init(void) {
 			IXON | ISIG | ICANON,
 			0,
 			INIT_C_CC},
+			-1,
 			0,
 			0,
 			0,
+			{25, 80, 0, 0},
 			spty_write,
 			spty_queues+0+i*3,spty_queues+1+i*3,spty_queues+2+i*3
 		};
@@ -486,4 +482,5 @@ void tty_init(void) {
 	rs_init();
 	printk("%d virtual consoles\n\r", NR_CONSOLES);
 	printk("%d pty's\n\r", NR_PTYS);
+	// lp_init();
 }

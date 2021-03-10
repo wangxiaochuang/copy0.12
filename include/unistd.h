@@ -122,6 +122,9 @@
 #define __NR_lstat			84
 #define __NR_readlink		85
 #define __NR_uselib			86
+#define __NR_swapon			87
+#define __NR_reboot			88
+#define __NR_readdir		89
 
 /**
  * INT指令执行，硬件自动在内核栈压入：
@@ -155,7 +158,7 @@ type name(atype a) 									\
 	long __res; 									\
 	__asm__ volatile ("int $0x80" 					\
 		: "=a" (__res) 								\
-		: "0" (__NR_##name), "b" ((long)(a))); 		\
+		: "0" (__NR_##name), "g" ((long)(a))); 		\
 	if (__res >= 0) 								\
 		return (type) __res; 						\
 	errno = -__res; 								\
@@ -169,7 +172,7 @@ type name(atype a, btype b) 						\
 	long __res; 									\
 	__asm__ volatile ("int $0x80" 					\
 		: "=a" (__res)								\
-		: "0" (__NR_##name), "b" ((long)(a)), "c" ((long)(b))); 	\
+		: "0" (__NR_##name), "g" ((long)(a)), "c" ((long)(b))); 	\
 	if (__res >= 0) 								\
 		return (type) __res; 						\
 	errno = -__res; 								\
@@ -183,7 +186,7 @@ type name(atype a, btype b, ctype c) 				\
 	long __res; 									\
 	__asm__ volatile ("int $0x80"					\
 		: "=a" (__res) 								\
-		: "0" (__NR_##name), "b" ((long)(a)), "c" ((long)(b)), "d" ((long)(c))); \
+		: "0" (__NR_##name), "g" ((long)(a)), "c" ((long)(b)), "d" ((long)(c))); \
 	if (__res >= 0) 								\
 		return (type) __res; 						\
 	errno = -__res; 								\

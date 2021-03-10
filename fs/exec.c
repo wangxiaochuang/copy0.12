@@ -166,7 +166,7 @@ static unsigned long change_ldt(unsigned long text_size, unsigned long * page) {
 }
 int do_execve(unsigned long * eip, long tmp, char * filename,
 	char ** argv, char ** envp) {
-	struct m_inode * inode;
+	struct inode * inode;
 	struct buffer_head * bh;
 	struct exec ex;
 	unsigned long page[MAX_ARG_PAGES]; /* 参数和环境串空间页面指针数组 */
@@ -175,14 +175,12 @@ int do_execve(unsigned long * eip, long tmp, char * filename,
 	int retval;
 	int sh_bang = 0;					/* 控制是否需要执行脚本文件 */
 	unsigned long p = PAGE_SIZE * MAX_ARG_PAGES - 4;
+	int ch;
 
 	// eip是调用本次系统调用的原用户程序代码指针
 	// eip[1]是调用本次系统调用的原用户程序的代码段寄存器CS值
-    if ((0xffff & eip[1]) != 0x000f) {
+    if ((0xffff & eip[1]) != 0x000f)
 		panic("execve called from supervisor mode");
-		char buf[128], *cp, *interp, *i_name, *i_arg;
-		unsigned long old_fs;
-	}
 	// 参数最多32个页面
 	for (i = 0; i < MAX_ARG_PAGES; i++) {
 		page[i] = 0;
@@ -200,9 +198,14 @@ restart_interp:
 	}
 
 	i = inode->i_mode;
-	// 如果有SUID位权限就取文件权限，否则就是当前进程权限
-	e_uid = (i & S_ISUID) ? inode->i_uid : current->euid;
-	e_gid = (i & S_ISGID) ? inode->i_gid : current->egid;
+	if (current->flags & PF_PTRACED) {
+		e_uid = current->euid;
+		e_gid = current->egid;
+	} else {
+		// 如果有SUID位权限就取文件权限，否则就是当前进程权限
+		e_uid = (i & S_ISUID) ? inode->i_uid : current->euid;
+		e_gid = (i & S_ISGID) ? inode->i_gid : current->egid;
+	}
 
 	// 查看当前进程是否有权限执行
 	// 如果当前进程的有效UID就是文件的UID，那么就查属主权限
@@ -215,12 +218,13 @@ restart_interp:
 	// 如果还是没有就是其他权限
 
 	// 普通进程没有权限 并且不是超级用户，或者文件也没执行权限
-	if (!(i & 1) && !((inode->i_mode & 0111) && suser())) {
-		retval = -ENOEXEC;
+	if (!(i & 1) && 
+		!((inode->i_mode & 0111) && suser())) {
+		retval = -EACCES;
 		goto exec_error2;
 	}
 	// 读取第一块数据
-	if (!(bh = bread(inode->i_dev, inode->i_zone[0]))) {
+	if (!(bh = bread(inode->i_dev, inode->i_data[0]))) {
 		retval = -EACCES;
 		goto exec_error2;
 	}
@@ -251,6 +255,16 @@ restart_interp:
 			goto exec_error2;
 		}
 	}
+
+	for (i = 0; (ch = get_fs_byte(filename++)) != '\0')
+		if (ch == '/')
+			i = 0;
+		else
+			if (i < 8)
+				current->comm[i++] = ch;
+	if (i < 8)
+		current->comm[i] = '\0';
+
 	if (current->executable) {
 		iput(current->executable);
 	}
@@ -281,17 +295,19 @@ restart_interp:
 	current->brk = ex.a_bss + 
 		(current->end_data = ex.a_data + 
 		(current->end_code = ex.a_text));
-	current->start_stack = p & 0xfffff000;
+	current->start_stack = p;
+	current->rss = (LIBRARY_OFFSET - p + PAGE_SIZE - 1) / PAGE_SIZE;
 	current->suid = current->euid = e_uid;
 	current->sgid = current->egid = e_gid;
 	eip[0] = ex.a_entry;
 	eip[3] = p;
+	if (current->flags & PF_PTRACED)
+		send_sig(SIGTRAP, current, 0);
 	return 0;
-
 exec_error2:
 	iput(inode);
 exec_error1:
-	for (i = 0; i < MAX_ARG_PAGES; i ++) {
+	for (i = 0; i < MAX_ARG_PAGES; i++) {
 		free_page(page[i]);
 	}
 	return(retval);

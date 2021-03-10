@@ -2,7 +2,7 @@
 #define _TTY_H
 
 #define MAX_CONSOLES	8
-#define NR_SERIALS	2
+#define NR_SERIALS	4
 #define NR_PTYS		4
 
 extern int NR_CONSOLES;
@@ -20,9 +20,11 @@ struct tty_queue {
 };
 
 #define IS_A_CONSOLE(min)	(((min) & 0xC0) == 0x00)
+#define IS_A_SERIAL(min)	(((min) & 0xC0) == 0x40)
 #define IS_A_PTY(min)		((min) & 0x80)
 #define IS_A_PTY_MASTER(min)	(((min) & 0xC0) == 0x80)
 #define IS_A_PTY_SLAVE(min)	(((min) & 0xC0) == 0xC0)
+#define PTY_OTHER(min)		((min) ^ 0x40)
 
 #define INC(a) ((a) = ((a)+1) & (TTY_BUF_SIZE-1))
 #define DEC(a) ((a) = ((a)-1) & (TTY_BUF_SIZE-1))
@@ -51,14 +53,47 @@ struct tty_struct {
 	int pgrp;					/* 所属进程组 */
 	int session;				/* 会话号 */
 	int stopped;				/* 停止标志 */
+	int busy;
+	struct winsize winsize;
 	void (*write)(struct tty_struct * tty);	/* tty写函数指针 */
 	struct tty_queue *read_q;	/* tty读队列 */
 	struct tty_queue *write_q;	/* tty写队列 */
 	struct tty_queue *secondary;/* tty辅助队列(存放规范模式字符序列) */
 };
 
+#define TTY_WRITE_BUSY 1
+#define TTY_READ_BUSY 2
+
+#define TTY_WRITE_FLUSH(tty) \
+do { \
+	cli(); \
+	if (!EMPTY((tty)->write_q) && !(TTY_WRITE_BUSY & (tty)->busy)) { \
+		(tty)->busy |= TTY_WRITE_BUSY; \
+		sti(); \
+		(tty)->write((tty)); \
+		cli(); \
+		(tty)->busy &= ~TTY_WRITE_BUSY; \
+	} \
+	sti(); \
+} while (0)
+
+#define TTY_READ_FLUSH(tty) \
+do { \
+	cli(); \
+	if (!EMPTY((tty)->read_q) && !(TTY_READ_BUSY & (tty)->busy)) { \
+		(tty)->busy |= TTY_READ_BUSY; \
+		sti(); \
+		copy_to_cooked((tty)); \
+		cli(); \
+		(tty)->busy &= ~TTY_READ_BUSY;
+	} \
+	sti(); \
+} while (0)
+
 extern struct tty_struct tty_table[];
 extern int fg_console;
+extern unsigned long video_num_columns;
+extern unsigned long video_num_lines;
 
 #define TTY_TABLE(nr) \
 (tty_table + ((nr) ? (((nr) < 64)?(nr)-1:(nr)) : fg_console))
@@ -76,6 +111,8 @@ void con_write(struct tty_struct * tty);
 void rs_write(struct tty_struct * tty);
 void mpty_write(struct tty_struct * tty);
 void spty_write(struct tty_struct * tty);
+
+extern void serial_open(unsigned int line);
 
 void copy_to_cooked(struct tty_struct * tty);
 

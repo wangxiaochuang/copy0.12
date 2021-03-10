@@ -116,6 +116,7 @@ struct task_struct {
 	struct task_struct *p_cptr;		/* 指向最新子进程的指针 */
 	struct task_struct *p_ysptr;	/* 指向比自己后创建的相邻进程的指针 */
 	struct task_struct *p_osptr;	/* 指向比自己早创建的相邻进程的指针 */
+	struct task_struct *next_wait;
 	unsigned short uid;				/* 用户id */
 	unsigned short euid;			/* 有效用户id */
 	unsigned short suid;			/* 保存的设置用户id */
@@ -129,18 +130,23 @@ struct task_struct {
 	long cutime;					/* 子进程用户态运行时间 */
 	long cstime;					/* 子进程内核态运行时间 */
 	long start_time;				/* 进程开始运行时刻 */
+	unsigned long min_flt, maj_flt;
+	unsigned long cmin_flt, cmaj_flt;
 	struct rlimit rlim[RLIM_NLIMITS];	/* 进程资源使用统计数组 */
 	unsigned int flags;					/* per process flags, defined below */
 										/* 各进程的标志 */
 	unsigned short used_math;			/* 是否使用了协处理器的标志 */
+	unsigned short rss;
+	char comm[8];
 /* file system info */
+	int link_count;
 	int tty;		/* -1 if no tty, so it must be signed */
 					/* 进程使用tty终端的子设备号。-1表示没有使用 */
 	unsigned short umask;			/* 文件创建属性屏蔽位 */
-	struct m_inode * pwd;			/* 当前工作目录i节点结构指针 */
-	struct m_inode * root;			/* 根目录i节点结构指针 */
-	struct m_inode * executable;	/* 执行文件i节点结构指针 */
-	struct m_inode * library;		/* 被加载库文件i节点结构指针 */
+	struct inode * pwd;			/* 当前工作目录i节点结构指针 */
+	struct inode * root;			/* 根目录i节点结构指针 */
+	struct inode * executable;	/* 执行文件i节点结构指针 */
+	struct inode * library;		/* 被加载库文件i节点结构指针 */
 	unsigned long close_on_exec;	/* 执行时关闭文件句柄位图标志 */
 	struct file * filp[NR_OPEN];	/* 文件结构指针表，最多32项。表项号即是文件描述符的值 */
 /* ldt for this task 0 - zero 1 - cs 2 - ds&ss */
@@ -148,6 +154,10 @@ struct task_struct {
 /* tss for this task */
 	struct tss_struct tss;			/* 进程的任务状态段信息结构 */
 };
+
+#define PF_ALIGNWARN 0x00000001		/* 打印对其警告消息 */
+#define PF_PTRACED 0x00000010		/* 执行ptrace(0)后，有这个标志位 */
+#define PF_VM86 0x00000020
 
 /*
  *  INIT_TASK is used to set up the first task table, touch at
@@ -159,15 +169,18 @@ struct task_struct {
 /* ec,brk... */	0,0,0,0,0,0, \
 /* pid etc.. */	0,0,0,0, \
 /* suppl grps*/ {NOGROUP,}, \
-/* proc links*/ &init_task.task,0,0,0, \
+/* proc links*/ &init_task.task,NULL,NULL,NULL,NULL \
 /* uid etc */	0,0,0,0,0,0, \
 /* timeout */	0,0,0,0,0,0,0, \
+/* min_flt */	0,0,0,0 \
 /* rlimits */   { {0x7fffffff, 0x7fffffff}, {0x7fffffff, 0x7fffffff},  \
 		  {0x7fffffff, 0x7fffffff}, {0x7fffffff, 0x7fffffff}, \
 		  {0x7fffffff, 0x7fffffff}, {0x7fffffff, 0x7fffffff}}, \
 /* flags */	0, \
 /* math */	0, \
-/* fs info */	-1,0022,NULL,NULL,NULL,NULL,0, \
+/* rss */	2, \
+/* comm */	"swapper", \
+/* fs info */	0,-1,0022,NULL,NULL,NULL,NULL,0, \
 /* filp */	{NULL,}, \
 	{ \
 		{0,0}, \

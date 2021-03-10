@@ -8,20 +8,16 @@
 #include <const.h>
 #include <sys/stat.h>
 
-static struct m_inode * _namei(const char * filename, struct m_inode * base,
+static struct inode * _namei(const char * filename, struct m_inode * base,
     int follow_links);
 
 #define ACC_MODE(x) ("\004\002\006\377"[(x)&O_ACCMODE])
 
-#define MAY_EXEC 	1	/* 可执行 */
-#define MAY_WRITE	2	/* 可写 */
-#define MAY_READ 	4	/* 可读 */
-
-static int permission(struct m_inode *inode, int mask) {
+int permission(struct inode *inode, int mask) {
     int mode = inode->i_mode;
 
     // 已删除的文件
-    if (inode->i_dev && !inode->i_nlinks) {
+    if (inode->i_dev && !inode->i_nlink) {
         return 0;
     } else if (current->euid == inode->i_uid) {
         mode >>= 6;
@@ -33,6 +29,41 @@ static int permission(struct m_inode *inode, int mask) {
         return 1;
     }
     return 0;
+}
+
+int lookup(struct inode *dir, const char *name, int len, struct inode **result) {
+    struct super_block *sb;
+
+    *result = NULL;
+    // 要查找的是..
+    if (len == 2 && get_fs_byte(name) == '.' && get_fs_byte(name + 1) == '.') {
+        // 在根下找..那就等同于.
+        if (dir == current->root)
+            len = 1;
+        // 如果dir是一个挂载点，有设备挂载到这里的，那么dir就用挂载的文件系统的inode
+        else if ((sb = dir->i_sb) && (dir == sb->s_mounted)) {
+            sb = dir->i_sb;
+            iput(dir);
+            if (dir = sb->s_covered)
+                dir->i_count++;
+        }
+    }
+    if (!dir)
+        return -ENOENT;
+    if (!permission(dir, MAY_EXEC)) {
+        iput(dir);
+        return -EACCES;
+    }
+    // 要找的len为0，说明是这种/usr/local/
+    if (!len) {
+        *result = dir;
+        return 0;
+    }
+    if (!dir->i_op || !dir->i_op->lookup) {
+        iput(dir);
+        return -ENOENT;
+    }
+    return dir->i_op->lookup(dir, name, len, result);
 }
 
 static int match(int len, const char * name, struct dir_entry * de) {
@@ -191,148 +222,83 @@ static struct buffer_head * add_entry(struct m_inode * dir,
     return NULL;
 }
 
-static struct m_inode * follow_link(struct m_inode * dir, struct m_inode * inode) {
-    unsigned short fs;
-    struct buffer_head * bh;
-
-    if (!dir) {
-        dir = current->root;
-        dir->i_count ++;
-    }
-    if (!inode) {
+struct inode * follow_link(struct inode * dir, struct inode * inode) {
+    if (!dir || !inode) {
         iput(dir);
+        iput(inode);
         return NULL;
     }
-    if (!S_ISLNK(inode->i_mode)) {
+    if (!inode->i_op || !inode->i_op->follow_link) {
         iput(dir);
         return inode;
     }
-    __asm__("mov %%fs,%0":"=r" (fs));
-    if (fs != 0x17 || !inode->i_zone[0] ||
-       !(bh = bread(inode->i_dev, inode->i_zone[0]))) {
-        iput(dir);
-        iput(inode);
-        return NULL;
-    }
-    iput(inode);
-    __asm__("mov %0,%%fs"::"r" ((unsigned short) 0x10));
-    inode = _namei(bh->b_data,dir,0);
-    __asm__("mov %0,%%fs"::"r" (fs));
-    brelse(bh);
-    return inode;
+    return inode->i_op->follow_link(dir, inode);
 }
 
-static struct m_inode * get_dir(const char * pathname, struct m_inode * inode) {
-    char c;
-    const char * thisname;
-    struct buffer_head * bh;
-    int namelen,inr;
-    struct dir_entry * de;
-    struct m_inode * dir;
-
-    if (!inode) {
-        inode = current->pwd;
-        inode->i_count++;
-    }
-    if ((c = get_fs_byte(pathname)) == '/') {
-        iput(inode);
-        inode = current->root;
-        pathname++;
-        inode->i_count++;
-    }
-    while (1) {
-        thisname = pathname;
-        if (!S_ISDIR(inode->i_mode) || !permission(inode, MAY_EXEC)) {
-            iput(inode);
-            return NULL;
-        }
-        for (namelen = 0; (c = get_fs_byte(pathname++)) && (c != '/'); namelen++);
-        // 如果c==0，说明读到最后一个字符了，否则c就为'/'
-        if (!c) {
-            return inode;
-        }
-        // inode指向basedir，de为basedir的dir_entry
-        // 只有第一次使用superblock，才会修改inode
-        if (!(bh = find_entry(&inode, thisname, namelen, &de))) {
-            iput(inode);
-            return NULL;
-        }
-        inr = de->inode;
-        brelse(bh);
-        dir = inode;
-        if (!(inode = iget(dir->i_dev, inr))) {
-            iput(dir);
-            return NULL;
-        }
-        if (!(inode = follow_link(dir, inode)))
-            return NULL;
-    }
-}
 /**
  * 获取目录的inode，如 
  *  /usr/local => inode of /usr, name: local, namelen: 5
  **/
-static struct m_inode * dir_namei(const char * pathname,
-    int * namelen, const char ** name, struct m_inode * base) {
+static struct inode * dir_namei(const char * pathname,
+    int * namelen, const char ** name, struct inode * base) {
 
     char c;
-    const char *basename;
-    struct m_inode *dir;
+    const char *thisname;
+    int len, error;
+    struct inode *inode;
 
-    // 比如：/usr/local/aa ==> local
-    // 获取路径的dirname所在的inode
-    if (!(dir = get_dir(pathname, base))) {
-        return NULL;
+    if (!base) {
+        base = current->pwd;
+        base->i_count++;
     }
-    basename = pathname;
     // 最后basename为最后一个name
-    while ((c = get_fs_byte(pathname++))) {
-        if (c == '/') {
-            basename = pathname;
-        }
+    while ((c = get_fs_byte(pathname)) == '/') {
+        iput(base);
+        base = current->root;
+        pathname++;
+        base->i_count++;
     }
-    // 获取最后一节的名字和长度
-    *namelen = pathname - basename - 1;
-    *name = basename;
-    return dir;
+    while (1) {
+        thisname = pathname;
+        for (len = 0; (c = get_fs_byte(pathname++)) && (c != '/'); len++);
+        if (!c)
+            break;
+        base->i_count++;
+        error = lookup(base, thisname, len, &inode);
+        if (error) {
+            iput(base);
+            return NULL;
+        }
+        if (!(base = follow_link(base, inode)))
+            return NULL;
+    }
+    *name = thisname;
+    *namelen = len;
+    return base;
 }
 
-struct m_inode * _namei(const char * pathname, struct m_inode * base,
+struct inode * _namei(const char * pathname, struct inode * base,
     int follow_links) {
     const char * basename;
-    int inr, namelen;
-    struct m_inode * inode;
-    struct buffer_head * bh;
-    struct dir_entry * de;
+    int namelen, error;
+    struct inode * inode;
 
-    if (!(base = dir_namei(pathname, &namelen, &basename, base))) {
+    if (!(base = dir_namei(pathname, &namelen, &basename, base)))
         return NULL;
-    }
-    /**
-     * /usr/local  => inode of /usr
-     * /usr/       => inode of /usr
-     **/
-    if (!namelen) {			/* special case: '/usr/' etc */
-        return base;
-    }
-    bh = find_entry(&base, basename, namelen, &de);
-    if (!bh) {
+    base->i_count++;
+    error = lookup(base, basename, namelen, &inode);
+    if (error) {
         iput(base);
         return NULL;
     }
-    inr = de->inode;
-    brelse(bh);
-    if (!(inode = iget(base->i_dev, inr))) {
-        iput(base);
-        return NULL;
-    }
-    if (follow_link) {
+    if (follow_links)
         inode = follow_link(base, inode);
-    } else {
+    else
         iput(base);
+    if (inode) {
+        inode->i_atime = CURRENT_TIME;
+        inode->i_dirt = 1;
     }
-    inode->i_atime = CURRENT_TIME;
-    inode->i_dirt = 1;
     return inode;
 }
 
@@ -350,18 +316,16 @@ struct m_inode * lnamei(const char * pathname) {
  * @param[in]	pathname	路径名
  * @retval		成功返回对应的i节点，失败返回NULL
  */
-struct m_inode * namei(const char * pathname) {
+struct inode * namei(const char * pathname) {
     return _namei(pathname, NULL, 1);
 }
 
 int open_namei(const char * pathname, int flag, int mode,
-    struct m_inode ** res_inode) {
+    struct inode ** res_inode) {
 
     const char *basename;
-    int inr,dev,namelen;
-    struct m_inode * dir, *inode;
-    struct buffer_head * bh;
-    struct dir_entry * de;
+    int namelen, error;
+    struct inode *dir, *inode;
 
     if ((flag & O_TRUNC) && !(flag & O_ACCMODE)) {
         flag |= O_WRONLY;
@@ -440,9 +404,7 @@ int open_namei(const char * pathname, int flag, int mode,
 int sys_mknod(const char * filename, int mode, int dev) {
     const char *basename;
     int namelen;
-    struct m_inode *dir, *inode;
-    struct buffer_head *bh;
-    struct dir_entry *de;
+    struct inode *dir;
 
     if (!suser()) return -EPERM;
     if (!(dir = dir_namei(filename, &namelen, &basename, NULL)))
@@ -453,46 +415,19 @@ int sys_mknod(const char * filename, int mode, int dev) {
     }
     if (!permission(dir, MAY_WRITE)) {
         iput(dir);
-        return -EPERM;
+        return -EACCES;
     }
-    bh = find_entry(&dir, basename, namelen, &de);
-    if (bh) {
-        brelse(bh);
-        iput(dir);
-        return -EEXIST;
-    }
-    inode = new_inode(dir->i_dev);
-    if (!inode) {
-        iput(dir);
-        return -ENOSPC;
-    }
-    inode->i_mode = mode;
-    if (S_ISBLK(mode) || S_ISCHR(mode)) {
-        inode->i_zone[0] = dev;
-    }
-    inode->i_mtime = inode->i_atime = CURRENT_TIME;
-    inode->i_dirt = 1;
-    bh = add_entry(dir, basename, namelen, &de);
-    if (!bh) {
-        iput(dir);
-        inode->i_nlinks = 0;
-        iput(inode);
-        return -ENOSPC;
-    }
-    de->inode = inode->i_num;
-    bh->b_dirt = 1;
-    iput(dir);
-    iput(inode);
-    brelse(bh);
-    return 0;
+    if (!dir->i_op || !dir->i_op->mknod) {
+		iput(dir);
+		return -EPERM;
+	}
+    return dir->i_op->mknod(dir, basename, namelen, mode, dev);
 }
 
 int sys_mkdir(const char * pathname, int mode) {
     const char * basename;
     int namelen;
-    struct m_inode * dir, * inode;
-    struct buffer_head * bh, *dir_block;
-    struct dir_entry * de;
+    struct inode * dir;
 
     if (!(dir = dir_namei(pathname, &namelen, &basename, NULL))) {
         return -ENOENT;
@@ -505,60 +440,11 @@ int sys_mkdir(const char * pathname, int mode) {
         iput(dir);
         return -EPERM;
     }
-    bh = find_entry(&dir, basename, namelen, &de);
-    if (bh) {
-        brelse(bh);
-        iput(dir);
-        return -EEXIST;
-    }
-    inode = new_inode(dir->i_dev);
-    if (!inode) {
-        iput(dir);
-        return -ENOSPC;
-    }
-    // . .. 占据前两项
-    inode->i_size = 32;
-    inode->i_dirt = 1;
-    inode->i_mtime = inode->i_atime = CURRENT_TIME;
-    if (!(inode->i_zone[0] = new_block(inode->i_dev))) {
-        iput(dir);
-        inode->i_nlinks--;
-        iput(inode);
-        return -ENOSPC;
-    }
-    inode->i_dirt = 1;
-    if (!(dir_block = bread(inode->i_dev, inode->i_zone[0]))) {
-        iput(dir);
-        inode->i_nlinks--;
-        iput(inode);
-        return -ERROR;
-    }
-    de = (struct dir_entry *) dir_block->b_data;
-    de->inode = inode->i_num;
-    strcpy(de->name, ".");
-    de++;
-    de->inode = dir->i_num;
-    strcpy(de->name, "..");
-    inode->i_nlinks = 2;
-    dir_block->b_dirt = 1;
-    brelse(dir_block);
-    inode->i_mode = I_DIRECTORY | (mode & 0777 & ~current->umask);
-    inode->i_dirt = 1;
-    bh = add_entry(dir, basename, namelen, &de);
-    if (!bh) {
-        iput(dir);
-        inode->i_nlinks = 0;
-        iput(inode);
-        return -ENOSPC;
-    }
-    de->inode = inode->i_num;
-    bh->b_dirt = 1;
-    dir->i_nlinks++;
-    dir->i_dirt = 1;
-    iput(dir);
-    iput(inode);
-    brelse(bh);
-    return 0;
+    if (!dir->i_op || !dir->i_op->mkdir) {
+		iput(dir);
+		return -EPERM;
+	}
+	return dir->i_op->mkdir(dir,basename,namelen,mode);
 }
 
 /**
@@ -611,80 +497,7 @@ static int empty_dir(struct m_inode * inode) {
 int sys_rmdir(const char * name) {
     const char *basename;
     int namelen;
-    struct m_inode *dir, *inode;
-    struct buffer_head *bh;
-    struct dir_entry *de;
-
-    if (!(dir = dir_namei(name, &namelen, &basename, NULL))) return -ENOENT;
-    if (!namelen) {
-        iput(dir);
-        return -ENOENT;
-    }
-    if (!permission(dir, MAY_WRITE)) {
-        iput(dir);
-        return -EPERM;
-    }
-    bh = find_entry(&dir, basename, namelen, &de);
-    if (!bh) {
-        iput(dir);
-        return -ENOENT;
-    }
-    if (!(inode = iget(dir->i_dev, de->inode))) {
-        iput(dir);
-        brelse(bh);
-        return -EPERM;
-    }
-    if ((dir->i_mode & S_ISVTX) && current->euid && inode->i_uid != current->euid) {
-        iput(dir);
-        iput(inode);
-        brelse(bh);
-        return -EPERM;
-    }
-    if (inode->i_dev != dir->i_dev || inode->i_count > 1) {
-        iput(dir);
-        iput(inode);
-        brelse(bh);
-        return -EPERM;
-    }
-    if (inode == dir) {
-        iput(inode);
-        iput(dir);
-        brelse(bh);
-        return -EPERM;
-    }
-    if (!S_ISDIR(inode->i_mode)) {
-        iput(inode);
-        iput(dir);
-        brelse(bh);
-        return -ENOTDIR;
-    }
-    if (!empty_dir(inode)) {
-        iput(inode);
-        iput(dir);
-        brelse(bh);
-        return -ENOTEMPTY;
-    }
-    if (inode->i_nlinks != 2)
-        printk("empty directory has nlink!=2 (%d)",inode->i_nlinks);
-    de->inode = 0;
-    bh->b_dirt = 1;
-    brelse(bh);
-    inode->i_nlinks = 0;
-    inode->i_dirt = 1;
-    dir->i_nlinks--;
-    dir->i_ctime = dir->i_mtime = CURRENT_TIME;
-    dir->i_dirt = 1;
-    iput(dir);
-    iput(inode);
-    return 0;
-}
-
-int sys_unlink(const char * name) {
-    const char *basename;
-    int namelen;
-    struct m_inode *dir, *inode;
-    struct buffer_head *bh;
-    struct dir_entry *de;
+    struct inode *dir;
 
     if (!(dir = dir_namei(name, &namelen, &basename, NULL)))
         return -ENOENT;
@@ -694,58 +507,22 @@ int sys_unlink(const char * name) {
     }
     if (!permission(dir, MAY_WRITE)) {
         iput(dir);
+        return -EACCES;
+    }
+    if (!dir->i_op || !dir->i_op->rmdir) {
+        iput(dir);
         return -EPERM;
     }
-    bh = find_entry(&dir, basename, namelen, &de);
-    if (!bh) {
-        iput(dir);
-        return -ENOENT;
-    }
-    if (!(inode = iget(dir->i_dev, de->inode))) {
-        iput(dir);
-        brelse(bh);
-        return -ENOENT;
-    }
-    if ((dir->i_mode & S_ISVTX) && !suser() &&
-        current->euid != inode->i_uid &&
-        current->euid != dir->i_uid) {
-        iput(dir);
-        iput(inode);
-        brelse(bh);
-        return -EPERM;
-    }
-    if (S_ISDIR(inode->i_mode)) {
-        iput(inode);
-        iput(dir);
-        brelse(bh);
-        return -EPERM;
-    }
-    if (!inode->i_nlinks) {
-        printk("Deleting nonexistent file (%04x:%d), %d\n",
-            inode->i_dev, inode->i_num, inode->i_nlinks);
-        inode->i_nlinks = 1;
-    }
-    de->inode = 0;
-    bh->b_dirt = 1;
-    brelse(bh);
-    inode->i_nlinks--;
-    inode->i_dirt = 1;
-    inode->i_ctime = CURRENT_TIME;
-    iput(inode);
-    iput(dir);
-    return 0;
+    return dir->i_op->rmdir(dir, basename, namelen);
 }
 
-int sys_symlink(const char * oldname, const char * newname) {
-    struct dir_entry *de;
-    struct m_inode *dir, *inode;
-    struct buffer_head *bh, *name_block;
+int sys_unlink(const char * name) {
     const char *basename;
-    int namelen, i;
-    char c;
+    int namelen;
+    struct inode *dir;
 
-    dir = dir_namei(newname, &namelen, &basename, NULL);
-    if (!dir) return -EACCES;
+    if (!(dir = dir_namei(name, &namelen, &basename, NULL)))
+        return -ENOENT;
     if (!namelen) {
         iput(dir);
         return -EPERM;
@@ -754,70 +531,43 @@ int sys_symlink(const char * oldname, const char * newname) {
         iput(dir);
         return -EACCES;
     }
-    if (!(inode = new_inode(dir->i_dev))) {
+    if (!dir->i_op || !dir->i_op->unlink) {
         iput(dir);
-        return -ENOSPC;
+        return -EPERM;
     }
-    inode->i_mode = S_IFLNK | (0777 & ~current->umask);
-    inode->i_dirt = 1;
-    if (!(inode->i_zone[0] = new_block(inode->i_dev))) {
+    return dir->i_op->unlink(dir, basename, namelen);
+}
+
+int sys_symlink(const char * oldname, const char * newname) {
+    struct inode *dir;
+    const char *basename;
+    int namelen;
+
+    dir = dir_namei(newname, &namelen, &basename, NULL);
+    if (!dir) return -EACCES;
+    if (!namelen) {
         iput(dir);
-        inode->i_nlinks--;
-        iput(inode);
-        return -ENOSPC;
+        return -EACCES;
     }
-    inode->i_dirt = 1;
-    if (!(name_block = bread(inode->i_dev, inode->i_zone[0]))) {
+    if (!permission(dir, MAY_WRITE)) {
         iput(dir);
-        inode->i_nlinks--;
-        iput(inode);
-        return -ERROR;
+        return -EACCES;
     }
-    i = 0;
-    while (i < 1023 && (c = get_fs_byte(oldname++)))
-        name_block->b_data[i++] = c;
-    name_block->b_data[i] = 0;
-    name_block->b_dirt = 1;
-    brelse(name_block);
-    inode->i_size = i;
-    inode->i_dirt = 1;
-    bh = find_entry(&dir, basename, namelen, &de);
-    if (bh) {
-        inode->i_nlinks--;
-        iput(inode);
-        brelse(bh);
+    if (!dir->i_op || !dir->i_op->symlink) {
         iput(dir);
-        return -EEXIST;
+        return -EPERM;
     }
-    bh = add_entry(dir, basename, namelen, &de);
-    if (!bh) {
-        inode->i_nlinks--;
-        iput(inode);
-        iput(dir);
-        return -ENOSPC;
-    }
-    de->inode = inode->i_num;
-    bh->b_dirt = 1;
-    brelse(bh);
-    iput(dir);
-    iput(inode);
-    return 0;
+    return dir->i_op->symlink(dir, basename, namelen, oldname);
 }
 
 int sys_link(const char * oldname, const char * newname) {
-    struct dir_entry *de;
-    struct m_inode *oldinode, *dir;
-    struct buffer_head *bh;
+    struct node *oldinode, *dir;
     const char *basename;
     int namelen;
 
     oldinode = namei(oldname);
     if (!oldinode)
         return -ENOENT;
-    if (S_ISDIR(oldinode->i_mode)) {
-        iput(oldinode);
-        return -EPERM;
-    }
     dir = dir_namei(newname, &namelen, &basename, NULL);
     if (!dir) {
         iput(oldinode);
@@ -840,28 +590,56 @@ int sys_link(const char * oldname, const char * newname) {
         iput(oldinode);
         return -EACCES;
     }
-    bh = find_entry(&dir, basename, namelen, &de);
-    if (bh) {
-        brelse(bh);
+    if (!dir->i_op || !dir->i_op->link) {
         iput(dir);
         iput(oldinode);
-        return -EEXIST;
+        return -EPERM;
     }
-    bh = add_entry(dir, basename, namelen, &de);
-    if (!bh) {
-        iput(dir);
-        iput(oldinode);
-        return -ENOSPC;
+    return dir->i_op->link(oldinode, dir, basename, namelen);
+}
+
+int sys_rename(const char *oldname, const char *newname) {
+    struct inode *old_dir, *new_dir;
+    const char *old_base, *new_base;
+    int old_len, new_len;
+
+    old_dir = dir_namei(oldname, &old_len, &old_base, NULL);
+    if (!old_dir) 
+        return -ENOENT;
+    if (!permission(old_dir, MAY_WRITE)) {
+        iput(old_dir);
+        return -EACCES;
     }
-    // 硬链接指向同一个inode号
-    de->inode = oldinode->i_num;
-    bh->b_dirt = 1;
-    brelse(bh);
-    iput(dir);
-    // 硬链接数据加1
-    oldinode->i_nlinks++;
-    oldinode->i_ctime = CURRENT_TIME;
-    oldinode->i_dirt = 1;
-    iput(oldinode);
-    return 0;
+    // 不能是斜线 也不能是.和..
+    if (!old_len || (get_fs_byte(old_base) == '.' && (old_len == 1 || (get_fs_byte(old_base + 1) == '.' && old_len == 2)))) {
+        iput(old_dir);
+        return -EPERM;
+    }
+    new_dir = dir_namei(newname, &new_len, &new_base, NULL);
+    if (!new_dir) {
+        iput(old_dir);
+        return -ENOENT;
+    }
+    if (!permission(new_dir, MAY_WRITE)) {
+        iput(old_dir);
+        iput(new_dir);
+        return -EPERM;
+    }
+    if (!new_len || (get_fs_byte(new_base) == '.' && (new_len == 1 || (get_fs_byte(new_base + 1) == '.' && new_len = 2)))) {
+        iput(old_dir);
+        iput(new_dir);
+        return -EPERM;
+    }
+    // 不支持跨设备
+    if (new_dir->i_dev != old_dir->i_dev) {
+        iput(old_dir);
+        iput(new_dir);
+        return -EXDEV;
+    }
+    if (!old_dir->i_op || old_dir->i_op->rename) {
+        iput(old_dir);
+        iput(new_dir);
+        return -EPERM;
+    }
+    return old_dir->i_op->rename(old_dir, old_base, old_len, new_dir, new_base, new_len);
 }

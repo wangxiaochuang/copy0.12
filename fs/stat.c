@@ -4,17 +4,17 @@
 #include <linux/sched.h>
 #include <asm/segment.h>
 
-static void cp_stat(struct m_inode * inode, struct stat * statbuf) {
+static void cp_stat(struct inode * inode, struct stat * statbuf) {
     struct stat tmp;
 
     verify_area(statbuf, sizeof (struct stat));
     tmp.st_dev      = inode->i_dev;
     tmp.st_ino      = inode->i_num;
     tmp.st_mode     = inode->i_mode;
-    tmp.st_nlink    = inode->i_nlinks;
+    tmp.st_nlink    = inode->i_nlink;
     tmp.st_uid      = inode->i_uid;
     tmp.st_gid      = inode->i_gid;
-    tmp.st_rdev     = inode->i_zone[0];
+    tmp.st_rdev     = inode->i_rdev;
     tmp.st_size     = inode->i_size;
     tmp.st_atime	= inode->i_atime;
 	tmp.st_mtime	= inode->i_mtime;
@@ -25,7 +25,7 @@ static void cp_stat(struct m_inode * inode, struct stat * statbuf) {
     }
 }
 int sys_stat(char * filename, struct stat *statbuf) {
-    struct m_inode *inode;
+    struct inode *inode;
     if (!(inode = namei(filename))) {
         return -ENOENT;
     }
@@ -45,7 +45,7 @@ int sys_lstat(char * filename, struct stat * statbuf) {
 }
 int sys_fstat(unsigned int fd, struct stat * statbuf) {
     struct file *f;
-    struct m_inode *inode;
+    struct inode *inode;
 
     if (fd >= NR_OPEN || !(f = current->filp[fd]) || !(inode = f->f_inode)) {
 		return -EBADF;

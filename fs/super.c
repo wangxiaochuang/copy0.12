@@ -1,22 +1,39 @@
 #include <linux/config.h>
 #include <linux/sched.h>
+#include <linux/minix_fs.h>
 #include <linux/kernel.h>
 #include <asm/system.h>
 
 #include <errno.h>
 #include <sys/stat.h>
 
+/**
+ * 当addr的bitnr位是1，则返回1，否则返回0
+ **/
 #define set_bit(bitnr, addr) ({ 											\
-	register int __res; 													\
+	register int __res __asm__("ax");										\
 	__asm__("bt %2, %3; setb %%al"											\
 			:"=a" (__res)													\
-			:"a" (0),"r" (bitnr),"m" (*(addr))); 							\
+			:"a" (0), "r" (bitnr),"m" (*(addr))); 							\
 	__res; })
 
 struct super_block super_block[NR_SUPER];
 int ROOT_DEV = 0;
 
-static void lock_super(struct super_block *sb) {
+static struct file_system_type file_systems[] = {
+    { minix_read_super, "minix"},
+    { NULL, NULL }
+};
+
+struct file_system_type *get_fs_type(char *name) {
+    int a;
+    for (a = 0; file_systems[a].read_super; a++)
+        if (!strcmp(name, file_systems[a].name))
+            return &file_systems[a];
+    return NULL;
+}
+
+void lock_super(struct super_block *sb) {
     cli();
     while (sb->s_lock) {
         sleep_on(&(sb->s_wait));
@@ -25,7 +42,7 @@ static void lock_super(struct super_block *sb) {
     sti();
 }
 
-static void free_super(struct super_block *sb) {
+void free_super(struct super_block *sb) {
     cli();
     sb->s_lock = 0;
     wake_up(&(sb->s_wait));
@@ -62,7 +79,6 @@ struct super_block * get_super(int dev) {
 
 void put_super(int dev) {
     struct super_block *sb;
-    int i;
 
     if (dev == ROOT_DEV) {
         printk("root diskette changed: prepare for armageddon\n\r");
@@ -71,26 +87,18 @@ void put_super(int dev) {
     if (!(sb = get_super(dev))) {
         return;
     }
-    if (sb->s_imount) {
+    // 正挂载着不能释放
+    if (sb->s_covered) {
         printk("Mounted disk changed - tssk, tssk\n\r");
 		return;
     }
-    lock_super(sb);
-    sb->s_dev = 0;
-    for (i = 0; i < I_MAP_SLOTS; i++) {
-        brelse(sb->s_imap[i]);
-    }
-    for (i = 0; i < Z_MAP_SLOTS; i++) {
-        brelse(sb->s_zmap[i]);
-    }
-    free_super(sb);
-    return;
+    if (sb->s_op && sb->s_op->put_super)
+        sb->s_op->put_super(sb);
 }
 
-static struct super_block * read_super(int dev) {
+static struct super_block * read_super(int dev, char *name, void *data) {
 	struct super_block * s;
-	struct buffer_head * bh;
-	int i, block;
+    struct file_system_type *type;
 
 	if (!dev) {
 		return NULL;
@@ -101,6 +109,10 @@ static struct super_block * read_super(int dev) {
     if ((s = get_super(dev))) {
         return s;
     }
+    if (!(type = get_fs_type(name))) {
+		printk("get fs type failed %s\n",name);
+		return NULL;
+    }
     for (s = 0 + super_block; ; s++) {
         if (s >= NR_SUPER + super_block) {
             return NULL;
@@ -110,70 +122,23 @@ static struct super_block * read_super(int dev) {
         }
     }
     s->s_dev = dev;
-    s->s_isup = NULL;
-    s->s_imount = NULL;
+    if (!type->read_super(s, data))
+        return NULL;
+    s->s_dev = dev;
+    s->s_covered = NULL;
     s->s_time = 0;
     s->s_rd_only = 0;
     s->s_dirt = 0;
-    lock_super(s);
-    if (!(bh = bread(dev, 1))) {
-        s->s_dev = 0;
-        free_super(s);
-        return NULL;
-    }
-    *((struct d_super_block *) s) = *((struct d_super_block *) bh->b_data);
-    brelse(bh);
-	if (s->s_magic != SUPER_MAGIC) {
-		s->s_dev = 0;
-		free_super(s);
-		return NULL;
-	}
-    // 8 * 1024(位图逻辑块大小) * 8 (一个字节8位) * 1024(数据逻辑块大小)
-    for (i = 0; i < I_MAP_SLOTS; i++) {		/* 初始化i节点位图和逻辑块位图 */
-		s->s_imap[i] = NULL;
-	}
-	for (i = 0; i < Z_MAP_SLOTS; i++) {
-		s->s_zmap[i] = NULL;
-	}
-    block = 2;
-    for (i = 0; i < s->s_imap_blocks; i++) {
-        if ((s->s_imap[i] = bread(dev, block))) {
-            block++;
-        } else {
-            break;
-        }
-    }
-    for (i = 0; i < s->s_zmap_blocks; i++) {
-        if ((s->s_zmap[i] = bread(dev, block))) {
-            block++;
-        } else {
-            break;
-        }
-    }
-    if (block != 2 + s->s_imap_blocks + s->s_zmap_blocks) {
-        for (i = 0; i < I_MAP_SLOTS; i++) {
-            brelse(s->s_imap[i]);
-        }
-        for (i = 0; i < Z_MAP_SLOTS; i++) {
-            brelse(s->s_zmap[i]);
-        }
-        s->s_dev = 0;
-        free_super(s);
-        return NULL;
-    }
-    s->s_imap[0]->b_data[0] |= 1;
-    s->s_zmap[0]->b_data[0] |= 1;
-    free_super(s);
     return s;
 }
 
 int sys_umount(char *dev_name) {
-	struct m_inode *inode;
+	struct inode *inode;
 	struct super_block *sb;
 	int dev;
 
     if (!(inode = namei(dev_name))) return -ENOENT;
-    dev = inode->i_zone[0];
+    dev = inode->i_rdev;
     if (!S_ISBLK(inode->i_mode)) {
         iput(inode);
         return -ENOTBLK;
@@ -181,23 +146,28 @@ int sys_umount(char *dev_name) {
     iput(inode);
     // 根文件系统不能被卸载
     if (dev == ROOT_DEV) return -EBUSY;
-    if (!(sb = get_super(dev)) || !(sb->s_imount)) return -ENOENT;
-    // 超级块被安装到的i节点没有置位安装标志
-    if (!sb->s_imount->i_mount) {
+    // s_covered没有说明压根没有挂载
+    if (!(sb = get_super(dev)) || !(sb->s_covered)) return -ENOENT;
+    if (!sb->s_covered->i_mount) {
         printk("Mounted inode has i_mount=0\n");
     }
+    // 既然要卸载这个设备，那么就不能有相关的inode关联它
     for (inode = inode_table + 0; inode < inode_table + NR_INODE; inode++) {
         // 遍历inode列表，发现有inode正在使用这个设备且引用计数不为0
         if (inode->i_dev == dev && inode->i_count) {
-            return -EBUSY;
+            // 只会剩最后一个挂载点
+            if (inode == sb->s_mounted && inode->i_count == 1)
+                continue;
+            else
+                return -EBUSY;
         }
     }
-    sb->s_imount->i_mount = 0;
-    iput(sb->s_imount);
-    sb->s_imount = NULL;
+    sb->s_covered->i_mount = 0;
+    iput(sb->s_covered);
+    sb->s_covered = NULL;
     // 释放文件系统的根i节点
-    iput(sb->s_isup);
-    sb->s_isup = NULL;
+    iput(sb->s_mounted);
+    sb->s_mounted = NULL;
     put_super(dev);
     sync_dev(dev);
     return 0;
@@ -207,12 +177,12 @@ int sys_umount(char *dev_name) {
  * 将设备dev挂载到dir上
  **/
 int sys_mount(char *dev_name, char *dir_name, int rw_flag) {
-	struct m_inode *dev_i, *dir_i;
+	struct inode *dev_i, *dir_i;
 	struct super_block * sb;
 	int dev;
 
     if (!(dev_i = namei(dev_name))) return -ENOENT;
-    dev = dev_i->i_zone[0];
+    dev = dev_i->i_rdev;
     if (!S_ISBLK(dev_i->i_mode)) {
         iput(dev_i);
         return -EPERM;
@@ -220,7 +190,7 @@ int sys_mount(char *dev_name, char *dir_name, int rw_flag) {
     iput(dev_i);
     if (!(dir_i = namei(dir_name))) return -ENOENT;
     // 该i节点的引用数不是1（只能在这里引用），或者是根文件系统
-    if (dir_i->i_count != 1 || dir_i->i_num == ROOT_INO) {
+    if (dir_i->i_count != 1 || dir_i->i_ino == MINIX_ROOT_INO) {
         iput(dir_i);
         return -EBUSY;
     }
@@ -228,21 +198,21 @@ int sys_mount(char *dev_name, char *dir_name, int rw_flag) {
         iput(dir_i);
         return -EPERM;
     }
-    if (!(sb = read_super(dev))) {
-        iput(dir_i);
-        return -EBUSY;
-    }
-    // 已经挂载在其他地方了
-    if (sb->s_imount) {
-        iput(dir_i);
-        return -EBUSY;
-    }
-    // 这个目录i节点已经安装了文件系统
+    // 已经有设备挂载到dir_name了
     if (dir_i->i_mount) {
         iput(dir_i);
         return -EPERM;
     }
-    sb->s_imount = dir_i;
+    if (!(sb = read_super(dev, "minix", NULL))) {
+        iput(dir_i);
+        return -EBUSY;
+    }
+    // 设备已经挂载在其他地方了
+    if (sb->s_covered) {
+        iput(dir_i);
+        return -EBUSY;
+    }
+    sb->s_covered = dir_i;
     dir_i->i_mount = 1;
     dir_i->i_dirt = 1;
     return 0;
@@ -251,9 +221,9 @@ int sys_mount(char *dev_name, char *dir_name, int rw_flag) {
 void mount_root(void) {
     int i, free;
     struct super_block *p;
-    struct m_inode *mi;
+    struct inode *mi;
 
-    if (32 != sizeof (struct d_inode)) {
+    if (32 != sizeof (struct minix_inode)) {
 		panic("bad i-node size");
 	}
 
@@ -268,17 +238,14 @@ void mount_root(void) {
 		p->s_lock = 0;
 		p->s_wait = NULL;
     }
-    if (!(p = read_super(ROOT_DEV))) {
+    if (!(p = read_super(ROOT_DEV, "minix", NULL))) {
         panic("Unable to mount root");
     }
-    if (!(mi = iget(ROOT_DEV, ROOT_INO))) {
-        panic("Unable to read root i-node");
-    }
+    mi = p->s_mounted;
     mi->i_count += 3;
-    p->s_isup = p->s_imount = mi;
+    p->s_mounted = p->s_covered = mi;
     current->pwd = mi;
     current->root = mi;
-
     free = 0;
     i = p->s_nzones;
     while (--i >= 0) {

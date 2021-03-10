@@ -29,48 +29,29 @@ static inline void wait_on_buffer(struct buffer_head * bh) {
 	sti();
 }
 
-int sys_sync(void) {
+static void sync_buffers(int dev) {
     int i;
     struct buffer_head *bh;
 
-    sync_inodes();
-
-    bh = start_buffer;
-    for (i = 0; i < NR_BUFFERS; i++, bh++) {
+    bh = free_list;
+    for (i = 0; i < NR_BUFFERS; i++, bh = bh->b_next_free) {
         wait_on_buffer(bh);
-        if (bh->b_dirt) {
+        if (bh->b_dirt)
             ll_rw_block(WRITE, bh);
-        }
     }
+}
+
+int sys_sync(void) {
+    sync_inodes();
+    sync_buffers(0);
     return 0;
 }
 
 int sync_dev(int dev) {
-    int i;
-    struct buffer_head *bh;
-
-    bh = start_buffer;
-    for (i = 0; i < NR_BUFFERS; i++, bh++) {
-        if (bh->b_dev != dev) {
-            continue;
-        }
-        wait_on_buffer(bh);
-        if (bh->b_dev == dev && bh->b_dirt) {
-            ll_rw_block(WRITE, bh);
-        }
-    }
-    sync_inodes();
-    bh = start_buffer;
-    for (i = 0; i < NR_BUFFERS; i++, bh++) {
-        if (bh->b_dev != dev) {
-            continue;
-        }
-        wait_on_buffer(bh);
-        if (bh->b_dev == dev && bh->b_dirt) {
-            ll_rw_block(WRITE, bh);
-        }
-    }
-    return 0;
+    sync_buffers(dev);
+	sync_inodes();
+	sync_buffers(dev);
+	return 0;
 }
 
 static inline void invalidate_buffers(int dev) {
@@ -110,28 +91,56 @@ void check_disk_change(int dev) {
 #define _hashfn(dev, block) (((unsigned)(dev ^ block)) % NR_HASH)
 #define hash(dev, block) 	hash_table[_hashfn(dev, block)]
 
+static inline void remove_from_hash_queue(struct buffer_head *bh) {
+    if (bh->b_next)
+        bh->b_next->b_prev = bh->b_prev;
+    if (bh->b_prev)
+        bh->b_prev->b_next = bh->b_next;
+    // hash头
+    if (hash(bh->b_dev, bh->b_blocknr) == bh)
+        hash(bh->b_dev, bh->b_blocknr) = bh->b_next;
+    bh->b_next = bh->b_prev = NULL;
+}
+
+static inline void remove_from_free_list(struct buffer_head *bh) {
+    if (!(bh->b_prev_free) || !(bh->b_next_free))
+        panic("Free block list corrupted");
+    bh->b_prev_free->b_next_free = bh->b_next_free;
+    bh->b_next_free->b_prev_free = bh->b_prev_free;
+    if (free_list == bh)
+        free_list = bh->b_next_free;
+    bh->b_next_free = bh->b_prev_free = NULL;
+}
+
 static inline void remove_from_queues(struct buffer_head * bh) {
-    // 从hash队列中移除
-	if (bh->b_next) {
-		bh->b_next->b_prev = bh->b_prev;
-	}
-	if (bh->b_prev) {
-		bh->b_prev->b_next = bh->b_next;
-	}
-    // 要移除的是hash表的第一块，则让hash表的该位置指向下一个
-	if (hash(bh->b_dev, bh->b_blocknr) == bh) {
-		hash(bh->b_dev, bh->b_blocknr) = bh->b_next;
-	}
-    // 从空闲缓冲块表中移除缓冲块
-	if (!(bh->b_prev_free) || !(bh->b_next_free)) {
-		panic("Free block list corrupted");
-	}
-	bh->b_prev_free->b_next_free = bh->b_next_free;
-	bh->b_next_free->b_prev_free = bh->b_prev_free;
-	// 如果空闲链表头指向本缓冲区，则让其指向下一缓冲区
-	if (free_list == bh) {
-		free_list = bh->b_next_free;
-	}
+    remove_from_hash_queue(bh);
+    remove_from_free_list(bh);
+}
+
+static inline void put_first_free(struct buffer_head *bh) {
+    if (!bh || (bh == free_list))
+        return;
+    remove_from_free_list(bh);
+    bh->b_next_free = free_list;
+    bh->b_prev_free = free_list->b_prev_free;
+    free_list->b_prev_free->b_next_free = bh;
+    free_list->b_prev_free = bh;
+    free_list = bh;
+}
+
+static inline void put_last_free(struct buffer_head *bh) {
+    if (!bh)
+        return;
+    if (bh == free_list) {
+        free_list = bh->b_next_free;
+        return;
+    }
+    remove_from_free_list(bh);
+    // 将bh放到free_list的末尾
+    bh->b_next_free = free_list;
+    bh->b_prev_free = free_list->b_prev_free;
+    free_list->b_prev_free->b_next_free = bh;
+    free_list->b_prev_free = bh;
 }
 
 static inline void insert_into_queues(struct buffer_head * bh) {
@@ -153,15 +162,18 @@ static inline void insert_into_queues(struct buffer_head * bh) {
 	}
 }
 
-static struct buffer_head * find_buffer(int dev, int block)
-{		
+/**
+ * [dev^block % 307]->b_next
+ * [dev^block % 307]->b_next
+ * [dev^block % 307]->b_next
+ * ...
+ **/
+static struct buffer_head * find_buffer(int dev, int block) {		
 	struct buffer_head * tmp;
 
-	for (tmp = hash(dev, block); tmp != NULL; tmp = tmp->b_next) {
-		if (tmp->b_dev == dev && tmp->b_blocknr == block) {
+	for (tmp = hash(dev, block); tmp != NULL; tmp = tmp->b_next)
+		if (tmp->b_dev == dev && tmp->b_blocknr == block)
 			return tmp;
-		}
-	}
 	return NULL;
 }
 
@@ -170,12 +182,16 @@ struct buffer_head * get_hash_table(int dev, int block)
 	struct buffer_head * bh;
 
 	for (;;) {
+        // 在hash表中找到了
 		if (!(bh = find_buffer(dev, block))) {
 			return NULL;
 		}
-		bh->b_count ++;
+		bh->b_count++;
 		wait_on_buffer(bh);
+        // 睡眠期间可能变化了，所以要再判断一下
 		if (bh->b_dev == dev && bh->b_blocknr == block) {
+            // 放到free_list的末尾
+            put_last_free(bh);
 			return bh;
 		}
 		bh->b_count--;
@@ -189,13 +205,15 @@ struct buffer_head * get_hash_table(int dev, int block)
  * 填充好后放到hash表
  **/
 struct buffer_head *getblk(int dev, int block) {
-    struct buffer_head *tmp, *bh = NULL;
+    struct buffer_head *bh, *tmp;
+    int buffers;
 repeat:
-    if ((bh = get_hash_table(dev, block))) {
+    if ((bh = get_hash_table(dev, block)))
 		return bh;
-	}
+    buffers = NR_BUFFERS;
     tmp = free_list;
     do {
+        tmp = tmp->b_next_free;
         if (tmp->b_count) {
             continue;
         }
@@ -207,7 +225,9 @@ repeat:
                 break;
             }
         }
-    } while ((tmp = tmp->b_next_free) != free_list);
+        if (tmp->b_dirt)
+            ll_rw_block(WRITEA, tmp);
+    } while (buffers--);
     if (!bh) {
         // 没找到，我就睡了，有空闲的bh了，请叫醒我
         sleep_on(&buffer_wait);
@@ -215,9 +235,8 @@ repeat:
     }
     wait_on_buffer(bh);
     // bh解锁后发现还有被占用，就继续找
-    if (bh->b_count) {
+    if (bh->b_count)
         goto repeat;
-    }
     // 找到的这个有写入，就同步
     while (bh->b_dirt) {
         sync_dev(bh->b_dev);
@@ -348,7 +367,14 @@ void buffer_init(long buffer_end) {
     else
         b = (void *) buffer_end;
 
+    // end - 4M
+    // 从end到4M，开始是存放 struct buffer_head 列表
     while ((b -= BLOCK_SIZE) >= ((void *) (h + 1))) {
+        // buffer_head最多到0xA0000
+        if (((unsigned long) (h + 1)) > 0xA0000) {
+            printk("buffer-list doesn't fit in low meg - contact Linus\n");
+            break;
+        }
 		h->b_dev = 0;
 		h->b_dirt = 0;
 		h->b_count = 0;

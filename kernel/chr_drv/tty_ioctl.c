@@ -10,6 +10,8 @@
 #include <asm/system.h>
 
 extern int session_of_pgrp(int pgrp);
+extern int do_screendump(int arg);
+extern int kill_pg(int pgrp, int sig, int priv);
 extern int tty_signal(int sig, struct tty_struct *tty);
 
 static unsigned short quotient[] = {
@@ -39,11 +41,41 @@ static void flush(struct tty_queue * queue) {
 }
 
 static void wait_until_sent(struct tty_struct * tty) {
-	/* do nothing - not implemented */
+	cli();
+	while (!(current->signal & ~current->blocked) && !EMPTY(tty->write_q)) {
+		current->counter = 0;
+		interruptible_sleep_on(&tty->write_q->proc_list);
+	}
+	sti();
 }
 
 static void send_break(struct tty_struct * tty) {
 	/* do nothing - not implemented */
+}
+
+static int do_get_ps_info(int arg) {
+	struct tstruct {
+		int flag;
+		int present[NR_TASKS];
+		struct task_struct tasks[NR_TASKS];
+	}
+	struct tstruct *ts = (struct tstruct *) arg;
+	struct task_struct **p;
+	char *c, *d;
+	int i, n = 0;
+
+	verify_area((void *) arg, sizeof(struct tstruct));
+
+	for (p = &FIRST_TASK; p <= &LAST_TASK; p++, n++)
+		if (*p) {
+			c = (char *)(*p);
+			d = (char *)(ts->tasks + n);
+			for (i = 0; i < sizeof(struct task_struct); i++)
+				put_fs_byte(*c++, d++);
+			put_fs_long(1, (unsigned long *) (ts->present+n));
+		} else
+			put_fs_long(0, (unsigned long *) (ts->present+n));
+	return 0;
 }
 
 static int get_termios(struct tty_struct * tty, struct termios * termios) {
@@ -108,8 +140,42 @@ static int set_termio(struct tty_struct * tty, struct termio * termio,
 	return 0;
 }
 
+static int set_window_size(struct tty_struct *tty, struct winsize *ws) {
+	int i, changed;
+	char c, *tmp;
+
+	if (!ws)
+		return -EINVAL;
+	tmp = (char *) &tty->winsize;
+	changed = 0;
+	for (i = 0; i < sizeof(*ws); i++, tmp++) {
+		c = get_fs_byte(i + (char *) ws);
+		if (c == *tmp)
+			continue;
+		changed = 1;
+		*tmp = c;
+	}
+	if (changed)
+		kill_pg(tty->pgrp, SIGWINCH, 1);
+	return 0;
+}
+
+static int get_window_size(struct tty_struct *tty, struct winsize *ws) {
+	int i;
+	char *tmp;
+
+	if (!ws)
+		return -EINVAL;
+	verify_area(ws, sizeof(*ws));
+	tmp = (char *) ws;
+	for (i = 0; i < sizeof (struct winsize); i++, tmp++)
+		put_fs_byte(((char *) &tty->winsize)[i], tmp);
+	return 0;
+}
+
 int tty_ioctl(int dev, int cmd, int arg) {
     struct tty_struct *tty;
+    struct tty_struct *other_tty;
     int pgrp;
 
     if (MAJOR(dev) == 5) {
@@ -119,6 +185,13 @@ int tty_ioctl(int dev, int cmd, int arg) {
     } else
         dev = MINOR(dev);
     tty = tty_table + (dev ? ((dev < 64) ? dev - 1 : dev) : fg_console);
+	if (IS_A_PTY(dev))
+		other_tty = tty_table + PTY_OTHER(dev);
+	else
+		other_tty = NULL;
+
+	if (!(tty->write_q && tty->read_q && tty->secondary && tty-write))
+		return -EINVAL;
     switch (cmd) {
 		// 取终端termios结构信息
 		case TCGETS:
@@ -126,6 +199,9 @@ int tty_ioctl(int dev, int cmd, int arg) {
 		// 设置termios结构信息之前，需先等待输出队列中所有数据处理完毕，并且清空输入队列
 		case TCSETSF:
 			flush(tty->read_q); /* fallthrough */
+			flush(tty->secondary);
+			if (other_tty)
+				flush(other_tty->write_q);
 		// 设置termios结构信息之前，需先等待输出队列中所有数据处理完毕
 		case TCSETSW:
 			wait_until_sent(tty); /* fallthrough */
@@ -137,6 +213,9 @@ int tty_ioctl(int dev, int cmd, int arg) {
 			return get_termio(tty,(struct termio *) arg);
 		case TCSETAF:
 			flush(tty->read_q); /* fallthrough */
+			flush(tty->secondary);
+			if (other_tty)
+				flush(other_tty->write_q);
 		case TCSETAW:
 			wait_until_sent(tty); /* fallthrough */
 		case TCSETA:
@@ -154,12 +233,12 @@ int tty_ioctl(int dev, int cmd, int arg) {
             // terminal control output 挂起输出
 			case TCOOFF:
 				tty->stopped = 1;
-				tty->write(tty);
+				TTY_WRITE_FLUSH(tty);
 				return 0;
             // terminal control output 恢复挂起的输出
 			case TCOON:
 				tty->stopped = 0;
-				tty->write(tty);
+				TTY_WRITE_FLUSH(tty);
 				return 0;
             // 要求终端停止输入
 			case TCIOFF:
@@ -175,13 +254,19 @@ int tty_ioctl(int dev, int cmd, int arg) {
 			return -EINVAL; /* not implemented */
         // 刷新已写输出但还没发送、或已收但还没有读的数据
 		case TCFLSH:
-			if (arg==0)
+			if (arg==0) {
 				flush(tty->read_q);
-			else if (arg==1)
+				flush(tty->secondary);
+				if (other_tty)
+					flush(other_tty->write_q);
+			} else if (arg==1)
 				flush(tty->write_q);
 			else if (arg==2) {
 				flush(tty->read_q);
+				flush(tty->secondary);
 				flush(tty->write_q);
+				if (other_tty)
+					flush(other_tty->write_q);
 			} else
 				return -EINVAL;
 			return 0;
@@ -226,9 +311,11 @@ int tty_ioctl(int dev, int cmd, int arg) {
 		case TIOCSTI:
 			return -EINVAL; /* not implemented */
 		case TIOCGWINSZ:
-			return -EINVAL; /* not implemented */
+			return get_window_size(tty, (struct winsize *) arg);
 		case TIOCSWINSZ:
-			return -EINVAL; /* not implemented */
+			if (other_tty)
+				set_window_size(other_tty, (struct winsize *) arg);
+			return set_window_size(tty, (struct winsize *) arg);
 		case TIOCMGET:
 			return -EINVAL; /* not implemented */
 		case TIOCMBIS:
@@ -241,6 +328,15 @@ int tty_ioctl(int dev, int cmd, int arg) {
 			return -EINVAL; /* not implemented */
 		case TIOCSSOFTCAR:
 			return -EINVAL; /* not implemented */
+		case TIOCLINUX:
+			switch (get_fs_byte((char *) arg)) {
+				case 0:
+					return do_screendump(arg);
+				case 1:
+					return do_get_ps_info(arg);
+				default:
+					return -EINVAL;
+			}
 		default:
 			return -EINVAL;
     }

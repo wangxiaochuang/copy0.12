@@ -2,9 +2,14 @@
 #define _FS_H
 
 #include <sys/types.h>
+#include <sys/dirent.h>
 
 /* 判断设备是否是可以寻找定位的 */
 #define IS_SEEKABLE(x) ((x) >= 1 && (x) <= 3)
+
+#define MAY_EXEC 1
+#define MAY_WRITE 2
+#define MAY_READ 4
 
 #define READ 	0
 #define WRITE 	1
@@ -16,15 +21,8 @@ void buffer_init(long buffer_end);
 #define MAJOR(a) (((unsigned)(a)) >> 8)		/* 取高字节(主设备号) */
 #define MINOR(a) ((a) & 0xff)				/* 取低字节(次设备号) */
 
-#define NAME_LEN 		14
-#define ROOT_INO 		1
-
-#define I_MAP_SLOTS 	8					/* i节点位图的块数 */
-#define Z_MAP_SLOTS 	8					/* 逻辑块(区段块)位图的块数 */
-#define SUPER_MAGIC 	0x137F		/* MINIX文件系统魔数 */
-
 #define NR_OPEN 		20
-#define NR_INODE 		64
+#define NR_INODE 		128
 #define NR_FILE 		64
 #define NR_SUPER 		8
 #define NR_HASH 		307
@@ -35,19 +33,18 @@ void buffer_init(long buffer_end);
 	#define NULL ((void *) 0)
 #endif
 
-/* 每个逻辑块可存放的i节点数 */
-#define INODES_PER_BLOCK ((BLOCK_SIZE) / (sizeof (struct d_inode)))
-/* 每个逻辑块可存放的目录数 */
-#define DIR_ENTRIES_PER_BLOCK ((BLOCK_SIZE) / (sizeof (struct dir_entry)))
-
 #define PIPE_READ_WAIT(inode) 	((inode).i_wait)
 #define PIPE_WRITE_WAIT(inode) 	((inode).i_wait2)
-
-#define PIPE_HEAD(inode) 		((inode).i_zone[0])		/* 管道头部指针 */
-#define PIPE_TAIL(inode) 		((inode).i_zone[1])		/* 管道尾部指针 */
+#define PIPE_HEAD(inode) 		((inode).i_data[0])		/* 管道头部指针 */
+#define PIPE_TAIL(inode) 		((inode).i_data[1])		/* 管道尾部指针 */
 #define PIPE_SIZE(inode)		((PIPE_HEAD(inode) - PIPE_TAIL(inode)) & (PAGE_SIZE - 1))	/* 管道大小 */
 #define PIPE_EMPTY(inode) 		(PIPE_HEAD(inode) == PIPE_TAIL(inode))	/* 管道空 */
 #define PIPE_FULL(inode) 		(PIPE_SIZE(inode) == (PAGE_SIZE - 1))	/* 管道满 */
+
+#define NIL_FILP	((struct file *)0)
+#define SEL_IN		1
+#define SEL_OUT		2
+#define SEL_EX		4
 
 /* 缓冲块头数据结构(重要) */
 struct buffer_head {
@@ -74,41 +71,30 @@ struct buffer_head {
 	struct buffer_head * b_next_free;	/* 空闲表上的后一块 */
 };
 
-/* 磁盘上的索引节点(i节点)数据结构 */
-struct d_inode {
-	unsigned short i_mode;				/* 文件类型和属性(rwx位) */
-	unsigned short i_uid;				/* 用户id(文件拥有者标识符) */
-	unsigned long i_size;				/* 文件大小(字节数) */
-	unsigned long i_time;				/* 修改时间(自1970.1.1.:0算起，秒) */
-	unsigned char i_gid;				/* 组id(文件拥有者所在的组) */
-	unsigned char i_nlinks;				/* 链接数(多少个文件目录项指向该i节点) */
-	unsigned short i_zone[9];			/* 直接(0-6)，间接(7)或双重间接(8)逻辑块号 */
-										/* zone是区的意思，可译成区段，或逻辑块 */
-};
-
-/* 内存中的索引节点(i节点)数据结构 */
-struct m_inode {
-	unsigned short i_mode;
-	unsigned short i_uid;
-	unsigned long i_size;
-	unsigned long i_mtime;
-	unsigned char i_gid;
-	unsigned char i_nlinks;
-	unsigned short i_zone[9];
-	/* these are in memory also */		/* 以下是内存中特有的 */
-	struct task_struct * i_wait;		/* 等待该i节点的进程 */
-	struct task_struct * i_wait2;		/* for pipes */
-	unsigned long i_atime;				/* 最后访问时间 */
-	unsigned long i_ctime;				/* i节点自身修改时间 */
-	unsigned short i_dev;				/* i节点所在的设备号 */
-	unsigned short i_num;				/* i节点号 */
-	unsigned short i_count;				/* i节点被使用的次数，0表示该i节点空闲 */
-	unsigned char i_lock;				/* 锁定标志 */
-	unsigned char i_dirt;				/* 已修改(脏)标志 */
-	unsigned char i_pipe;				/* 管道标志 */
-	unsigned char i_mount;				/* 安装标志 */
-	unsigned char i_seek;				/* 搜寻标志(lseek时) */
-	unsigned char i_update;				/* 更新标志 */
+struct inode {
+	dev_t	i_dev;
+	ino_t	i_ino;
+	umode_t	i_mode;
+	nlink_t	i_nlink;
+	uid_t	i_uid;
+	gid_t	i_gid;
+	dev_t	i_rdev;
+	off_t	i_size;
+	time_t	i_atime;
+	time_t	i_mtime;
+	time_t	i_ctime;
+	unsigned long i_data[16];
+	struct inode_operations * i_op;
+	struct super_block * i_sb;
+	struct task_struct * i_wait;
+	struct task_struct * i_wait2;	/* for pipes */
+	unsigned short i_count;
+	unsigned char i_lock;
+	unsigned char i_dirt;
+	unsigned char i_pipe;
+	unsigned char i_mount;
+	unsigned char i_seek;
+	unsigned char i_update;
 };
 
 /* 文件结构(用于在文件句柄与i节点之间建立关系) */
@@ -116,52 +102,76 @@ struct file {
 	unsigned short f_mode;				/* 文件操作模式(RW位) */
 	unsigned short f_flags;				/* 文件打开和控制的标志 */
 	unsigned short f_count;				/* 对应文件引用计数值 */
-	struct m_inode *f_inode;			/* 指向对应i节点 */
+	struct inode *f_inode;			/* 指向对应i节点 */
+	struct file_operations *f_op;
 	off_t f_pos;						/* 文件位置(读写偏移值) */
 };
 
-/* 内存中的超级块结构 */
 struct super_block {
-	unsigned short s_ninodes;			/* 节点数 */
-	unsigned short s_nzones;			/* 逻辑块数 */
-	unsigned short s_imap_blocks;		/* i节点位图所占用的数据块数 */
-	unsigned short s_zmap_blocks;		/* 逻辑块位图所占用的数据块数 */
-	unsigned short s_firstdatazone;		/* 第一个数据逻辑块号 */
-	unsigned short s_log_zone_size;		/* log2(数据块数/逻辑块) */
-	unsigned long s_max_size;			/* 文件最大长度 */
-	unsigned short s_magic;				/* 文件系统魔数 */
-	/* These are only in memory */		/* 以下是内存中特有的 */
-	struct buffer_head * s_imap[8];		/* i节点位图缓冲块指针数组(占用8块，可表示64M) */
-	struct buffer_head * s_zmap[8];		/* 逻辑块位图缓冲块指针数组(占用8块) */
-	unsigned short s_dev;				/* 超级块所在设备号 */
-	struct m_inode * s_isup;			/* 被安装的文件系统根目录的i节点(isup-superi) */
-	struct m_inode * s_imount;			/* 被安装到的i节点 */
-	unsigned long s_time;				/* 修改时间 */
-	struct task_struct * s_wait;		/* 等待该超级块的进程 */
-	unsigned char s_lock;				/* 被锁定标志 */
-	unsigned char s_rd_only;			/* 只读标志 */
-	unsigned char s_dirt;				/* 已修改(脏)标志 */
+	unsigned short s_ninodes;
+	unsigned short s_nzones;
+	unsigned short s_imap_blocks;
+	unsigned short s_zmap_blocks;
+	unsigned short s_firstdatazone;
+	unsigned short s_log_zone_size;
+	unsigned long s_max_size;
+	unsigned short s_magic;
+/* These are only in memory */
+	struct buffer_head * s_imap[8];
+	struct buffer_head * s_zmap[8];
+	unsigned short s_dev;
+	struct inode * s_covered;			// 挂载后目录的inode
+	struct inode * s_mounted;			// 挂载前目录的inode
+	unsigned long s_time;
+	struct task_struct * s_wait;
+	unsigned char s_lock;
+	unsigned char s_rd_only;
+	unsigned char s_dirt;
+	/* TUBE */
+	struct super_operations *s_op;
 };
 
-/* 磁盘上的超级块结构 */
-struct d_super_block {
-	unsigned short s_ninodes;			/* 节点数 */
-	unsigned short s_nzones;			/* 逻辑块数 */
-	unsigned short s_imap_blocks;		/* i节点位图所占用的数据块数 */
-	unsigned short s_zmap_blocks;		/* 逻辑块位图所占用的数据块数 */
-	unsigned short s_firstdatazone;		/* 第一个数据逻辑块号 */
-	unsigned short s_log_zone_size;		/* log(数据块数/逻辑块) */
-	unsigned long s_max_size;			/* 文件最大长度 */
-	unsigned short s_magic;				/* 文件系统魔数 */
+struct file_operations {
+	int (*lseek) (struct inode *, struct file *, off_t, int);
+	int (*read) (struct inode *, struct file *, char *, int);
+	int (*write) (struct inode *, struct file *, char *, int);
+	int (*readdir) (struct inode *, struct file *, struct dirent *);
 };
 
-/* 文件目录项结构 */
-struct dir_entry {
-	unsigned short inode;				/* i节点号 */
-	char name[NAME_LEN];				/* 文件名，长度NAME_LEN=14 */
+struct inode_operations {
+	int (*create) (struct inode *,const char *,int,int,struct inode **);
+	int (*lookup) (struct inode *,const char *,int,struct inode **);
+	int (*link) (struct inode *,struct inode *,const char *,int);
+	int (*unlink) (struct inode *,const char *,int);
+	int (*symlink) (struct inode *,const char *,int,const char *);
+	int (*mkdir) (struct inode *,const char *,int,int);
+	int (*rmdir) (struct inode *,const char *,int);
+	int (*mknod) (struct inode *,const char *,int,int,int);
+	int (*rename) (struct inode *,const char *,int,struct inode *,const char *,int);
+	int (*readlink) (struct inode *,char *,int);
+	int (*open) (struct inode *, struct file *);
+	void (*release) (struct inode *, struct file *);
+	struct inode * (*follow_link) (struct inode *, struct inode *);
+	int (*bmap) (struct inode *,int);
+	void (*truncate) (struct inode *);
+	/* added by entropy */
+	void (*write_inode)(struct inode *inode);
+	void (*put_inode)(struct inode *inode);
 };
 
-extern struct m_inode inode_table[NR_INODE];
+struct super_operations {
+	void (*read_inode)(struct inode *inode);
+	void (*put_super)(struct super_block *sb);
+};
+
+struct file_system_type {
+	struct super_block *(*read_super)(struct super_block *sb, void *mode);
+	char *name;
+};
+
+extern struct file_system_type *get_fs_type(char *name);
+
+extern struct inode inode_table[NR_INODE];
 extern struct file file_table[NR_FILE];
 extern struct super_block super_block[NR_SUPER];
 extern int nr_buffers;
@@ -174,41 +184,44 @@ extern void check_disk_change(int dev);
 extern int floppy_change(unsigned int nr);
 
 /* 将i节点指定的文件截为0 */
-extern void truncate(struct m_inode * inode);
+extern void truncate(struct inode * inode);
 
 /* 刷新i节点信息 */
 extern void sync_inodes(void);
 
 /* 等待指定的i节点 */
-extern void wait_on(struct m_inode * inode);
+extern void wait_on(struct inode * inode);
 
 /* 逻辑块（区段，磁盘块）位图操作。*/
-extern int bmap(struct m_inode * inode, int block);
+extern int bmap(struct inode * inode, int block);
 
 /* 创建数据块block在设备上对应的逻辑块 */
-extern int create_block(struct m_inode * inode, int block);
+extern int create_block(struct inode * inode, int block);
 
 /* 获取指定路径名的i节点号 */
-extern struct m_inode * namei(const char * pathname);
+extern struct inode * namei(const char * pathname);
 
 /* 取指定路径名的i节点，不跟随符号链接 */
-extern struct m_inode * lnamei(const char * pathname);
+extern struct inode * lnamei(const char * pathname);
+extern int permission(struct inode * inode,int mask);
+extern struct inode * _namei(const char *filename, struct inode *base,
+	int follow_links);
 
 /* 根据路径名为打开文件操作作准备 */
 extern int open_namei(const char * pathname, int flag, int mode, 
-						struct m_inode ** res_inode);
+						struct inode ** res_inode);
 
 /* 释放一个i节点（回写入设备）*/
-extern void iput(struct m_inode * inode);
+extern void iput(struct inode * inode);
 
 /* 从设备读取指定节点号的一个i节点 */
-extern struct m_inode * iget(int dev, int nr);
+extern struct inode * iget(int dev, int nr);
 
 /* 从i节点表中获取一个空闲i节点项 */
-extern struct m_inode * get_empty_inode(void);
+extern struct inode * get_empty_inode(void);
 
 /* 获取(申请)管道节点 */
-extern struct m_inode * get_pipe_inode(void);
+extern struct inode * get_pipe_inode(void);
 
 /* 在哈希表中查找指定的数据块 */
 extern struct buffer_head * get_hash_table(int dev, int block);
@@ -219,6 +232,8 @@ extern struct buffer_head * getblk(int dev, int block);
 extern void ll_rw_block(int rw, struct buffer_head * bh);
 /* 读/写数据页面 */
 extern void ll_rw_page(int rw, int dev, int nr, char * buffer);
+
+extern void ll_rw_swap_file(int rw, int dev, unsigned int *b, int nb, char *buffer);
 
 extern void brelse(struct buffer_head * buf);
 
@@ -237,10 +252,10 @@ extern int new_block(int dev);
 extern int free_block(int dev, int block);
 
 /* 为设备dev建立一个新i节点 */
-extern struct m_inode * new_inode(int dev);
+extern struct inode * new_inode(int dev);
 
 /* 释放一个i节点 */
-extern void free_inode(struct m_inode * inode);
+extern void free_inode(struct inode * inode);
 
 /* 刷新指定设备缓冲区块 */
 extern int sync_dev(int dev);
@@ -257,5 +272,14 @@ extern void invalidate_inodes(int dev);
 extern int ROOT_DEV;
 
 extern void mount_root(void);
+extern void lock_super(struct super_block * sb);
+extern void free_super(struct super_block * sb);
 
+extern int pipe_read(struct inode *, struct file *, char *, int);
+extern int char_read(struct inode *, struct file *, char *, int);
+extern int block_read(struct inode *, struct file *, char *, int);
+
+extern int pipe_write(struct inode *, struct file *, char *, int);
+extern int char_write(struct inode *, struct file *, char *, int);
+extern int block_write(struct inode *, struct file *, char *, int);
 #endif

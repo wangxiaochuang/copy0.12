@@ -38,8 +38,7 @@ int sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg) {
     if (!S_ISCHR(mode) && !S_ISBLK(mode)) {
         return -EINVAL;
     }
-    // 字符设备和块设备的设备号放在i_zone[0]
-    dev = filp->f_inode->i_zone[0];
+    dev = filp->f_inode->i_rdev;
     if (MAJOR(dev) >= NRDEVS) {
         return -ENODEV;
     }

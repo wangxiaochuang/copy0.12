@@ -1,61 +1,63 @@
 #include <signal.h>
 #include <errno.h>
 #include <termios.h>
+#include <fcntl.h>
 
 #include <linux/sched.h>
 #include <linux/mm.h>	/* for get_free_page */
 #include <asm/segment.h>
 #include <linux/kernel.h>
 
-int read_pipe(struct m_inode * inode, char * buf, int count) {
+int pipe_read(struct inode * inode, struct file *filp, char * buf, int count) {
     int chars, size, read = 0;
 
-    while (count > 0) {
-        // 没有数据可读
-        while (!(size = PIPE_SIZE(*inode))) {
-            wake_up(& PIPE_WRITE_WAIT(*inode));
-            // 没有写进程，写进程可能已经退出
-            if (inode->i_count != 2) {
-                return read;
-            }
-            // 当前有收到信号，则立刻返回已读字节数退出，如果没有读到数据就重启系统调用号
-            if (current->signal & ~current->blocked) {
-                return read ? read : -ERESTARTSYS;
-            }
-            interruptible_sleep_on(& PIPE_READ_WAIT(*inode));
+    // 阻塞调用
+    if (!(filp->f_flags & O_NONBLOCK))
+        while (!PIPE_SIZE(*inode)) {
+            wake_up(&PIPE_WRITE_WAIT(*inode)) ;
+            if (inode->i_count != 2)
+                return 0;
+            // 如果有信号重启系统调用
+            if (current->signal & ~current->blocked)
+                return -ERESTARTSYS;
+            interruptible_sleep_on(&PIPE_READ_WAIT(*inode));
         }
+    // i_size -> |... TAIL ... HEAD ...| => PAGE
+    while (count > 0 && (size = PIPE_SIZE(*inode))) {
         // 当次循环可读的字节数
         chars = PAGE_SIZE - PIPE_TAIL(*inode);
-        if (chars > count) {
+        if (chars > count)
             chars = count;
-        }
-        if (chars > size) {
+        if (chars > size)
             chars = size;
-        }
         count -= chars;
         read += chars;
         size = PIPE_TAIL(*inode);
         PIPE_TAIL(*inode) += chars;
         PIPE_TAIL(*inode) &= (PAGE_SIZE - 1);
+        // i_size 指向缓冲区
         while (chars-- > 0) {
             put_fs_byte(((char *) inode->i_size)[size++], buf++);
         }
     }
     wake_up(& PIPE_WRITE_WAIT(*inode));
-    return read;
+    return read ? read : -EAGAIN;
 }
 
-int write_pipe(struct m_inode * inode, char * buf, int count) {
+int pipe_write(struct inode * inode, struct file *filp, char * buf, int count) {
     int chars, size, written = 0;
 
     while (count > 0) {
+        // size为0表示没有空间可写
         while (!(size = (PAGE_SIZE-1) - PIPE_SIZE(*inode))) {
             wake_up(& PIPE_READ_WAIT(*inode));
             if (inode->i_count != 2) {
                 current->signal |= (1<<(SIGPIPE-1));
-                return written ? written : -1;
+                return written ? written : -EINTR;
             }
-            sleep_on(& PIPE_WRITE_WAIT(*inode));
+            if (current->signal & ~current->blocked)
+                return written ? written : -EINTR;
+            interruptible_sleep_on(& PIPE_WRITE_WAIT(*inode));
         }
         chars = PAGE_SIZE - PIPE_HEAD(*inode);
         if (chars > count) {
@@ -84,12 +86,13 @@ int write_pipe(struct m_inode * inode, char * buf, int count) {
  * @retval		成功返回0，出错返回-1
  */
 int sys_pipe(unsigned long *fildes) {
-    struct m_inode *inode;
+    struct inode *inode;
     struct file *f[2];
     int fd[2];
     int i, j;
 
     j = 0;
+    // 找两个空闲的struct file
     for (i = 0; j < 2 && i < NR_FILE; i++) {
         if (!file_table[i].f_count) {
             (f[j++] = i + file_table)->f_count++;
