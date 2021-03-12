@@ -14,7 +14,7 @@ ROOT_DEV = 0
 SWAP_DEV = 0
 
 #ifndef SVGA_MODE
-#define SVGA_MODE ASK_VGA
+#define SVGA_MODE NORMAL_VGA
 #endif
 
 #ifndef RAMDISK
@@ -128,7 +128,6 @@ got_sectors:
 
 root_defined:
     cs
-    jmp .
     mov %ax, root_dev
     jmp $SETUPSEG, $0
 
@@ -148,7 +147,7 @@ die:
 rp_read:
     mov %es, %ax
     sub $SYSSEG, %ax    // es - 0x1000 = alread read
-    cmp %ax, syssize
+    cmp syssize, %ax
     jbe ok1_read        // 每次es会加0x1000，ax - SYSSEG就是已经读取数量，如果小于syssize，说明还要读
     ret
 ok1_read:
@@ -157,32 +156,32 @@ ok1_read:
     sub sread, %ax      // 每磁道扇区数减去已经读的该磁道扇区，就是需要读的，供read_track使用
     mov %ax, %cx        // 当前磁道剩余的扇区数
     shl $9, %cx         // cx * 512
-    add %bx, %cx        // 此次读操作后，段内共读入的字节数
+    add %bx, %cx        // 因为写入是不能超过一个段64k的，超过了要增加段值，这里bx为当前段已读字节数
     jnc ok2_read        // 没有超过64KB，跳转
     je ok2_read
     xor %ax, %ax
-    sub %bx, %ax        // 0减去某数就是概述64KB的补值
+    sub %bx, %ax        // 0减去某数就是概述64KB的补值，就是当前段还剩余可写的字节数
     shr $9, %ax         // 需要读的扇区数，read_track里用
 ok2_read:
     call read_track
     mov %ax, %cx
-    add sread, %ax      // 增加已读的记录
+    add sread, %ax      // 增加已读的扇区数
     cs
-    cmp sectors, %ax    // 看看是否超过最大扇区数
-    jne ok3_read
+    cmp sectors, %ax    // 看看是否等于最大扇区数
+    jne ok3_read        // 当前磁头的当前磁道还有扇区可读
     mov $1, %ax         
-    sub head, %ax       // 判断当前磁头号
-    jne ok4_read        // 如果是0磁头，则再取读1磁头面的扇区数据
+    sub head, %ax       // 判断当前磁头号, 1-head
+    jne ok4_read        // head=0, 跳转继续读磁头1
     incw track          // 否则读下一磁道
 ok4_read:
-    mov %ax, head
+    mov %ax, head       // 使用磁头1
     xor %ax, %ax
 ok3_read:
-    mov %ax, sread
-    shl $9, %cx
-    add %cx, %bx
-    jnc rp_read
-    mov %es, %ax
+    mov %ax, sread      // 保存当前磁道已读扇区编号
+    shl $9, %cx         // 已读扇区数 * 512
+    add %cx, %bx        // 当前段内偏移
+    jnc rp_read         // 没超过当前段，跳转执行
+    mov %es, %ax        // 超过当前段了，需要增加段值
     add $0x10, %ah
     mov %ax, %es
     xor %bx, %bx
@@ -199,11 +198,11 @@ read_track:
     mov track, %dx      // 当前磁道号
     mov sread, %cx      // 已经读的扇区数
     inc %cx             // 下一个要读的起始扇区
-    mov %dl, %ch        // ch: 当前磁道号
+    mov %dl, %ch        // ch: 当前磁道号, cl: 开始读的起始扇区号
     mov head, %dx           
     mov %dl, %dh        // dh: 当前磁头号，dl: 驱动器号（0表示当前A驱动器）
     and $0x0100, %dx    // 磁头号不会大于1，驱动器号是0，所以与操作
-    mov $2, %ah         // 读磁盘扇区功能号
+    mov $2, %ah         // ah读磁盘扇区功能号, al: 要读取的扇区数 
 
     push %dx
     push %cx
@@ -217,17 +216,68 @@ read_track:
     ret
 
 bad_rt:
-    push %ax
+    push %ax            // 保存出错信息，供print_all使用
     call print_all
 
     xor %ah, %ah
     xor %dl, %dl
+    int $0x13           // 执行驱动器复位操作
+
+    add $10, %sp
+    popa
+    jmp read_track
+
+print_all:
+    mov $5, %cx         // error code + 4 reg
+    mov %sp, %bp
+
+print_loop:
+    push %cx
+    call print_nl
+
+    cmp $5, %cl
+    jae no_reg
+
+    mov $0x0e05 + 'A - 1, %ax
+    sub %cl, %al
+    int $0x10
+
+    mov $'X, %al
+    int $0x10
+
+    mov $':, %al
+    int $0x10
+
+no_reg:
+    add $2, %bp
+    call print_hex
+    pop %cx
+    loop print_loop
+    ret
 
 print_nl:
     mov $0x0e0d, %ax
     int $0x10
     mov $0x0a, %al
     int $0x10
+    ret
+
+print_hex:
+    mov $4, %cx
+    mov (%bp), %dx
+print_digit:
+    rol $4, %dx
+    mov $0xe, %ah
+    mov %dl, %al
+    and $0xf, %al
+    add $'0, %al
+    cmp $'9, %al
+    jbe good_digit
+    add $'A - '0 - 10, %al
+
+good_digit:
+    int $0x10
+    loop print_digit
     ret
 
 kill_motor:

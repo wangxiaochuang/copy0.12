@@ -44,7 +44,7 @@ MAKE = make
 CPP	= $(CC) -E
 AR = ar
 STRIP = strip
-LDFLAGS	= -N -Ttext 0x0 --oformat binary -nostdlib
+LDFLAGS	= -N --oformat binary -nostdlib
 
 ARCHIVES	= kernel/kernel.o mm/mm.o fs/fs.o net/net.o ipc/ipc.o
 FILESYSTEMS	= fs/filesystems.a
@@ -100,12 +100,21 @@ tools/version.h: $(CONFIGURE) Makefile
 
 boot/bootsect: boot/bootsect.S include/linux/config.h
 	$(CC) -I include -c -o boot/bootsect.o boot/bootsect.S
-	$(LD) $(LDFLAGS) -e 0 -o boot/bootsect boot/bootsect.o
+	$(LD) $(LDFLAGS) -Ttext 0x0 -e 0 -o boot/bootsect boot/bootsect.o
 
-zImage: $(CONFIGURE) boot/bootsect
+tools/system: boot/head.o
+	$(LD) $(LDFLAGS) -Ttext 0x1000 -e startup_32 boot/head.o -o tools/system
+
+boot/setup: boot/setup.S include/linux/config.h
+	$(CC) -I include -c -o boot/setup.o boot/setup.S
+	$(LD) $(LDFLAGS) -Ttext 0x0 -e 0 -o boot/setup boot/setup.o
+
+zImage: $(CONFIGURE) boot/bootsect boot/setup tools/system
 
 zdisk: zImage
 	dd conv=notrunc if=boot/bootsect of=$(VHD) bs=512 count=$(shell expr $(shell expr `stat -c %s boot/bootsect` + 511) / 512) seek=0 >/dev/null 2>&1
+	dd conv=notrunc if=boot/setup of=$(VHD) bs=512 count=$(shell expr $(shell expr `stat -c %s boot/setup` + 511) / 512) seek=1 >/dev/null 2>&1
+	dd conv=notrunc if=tools/system of=$(VHD) bs=512 count=$(shell expr $(shell expr `stat -c %s tools/system` + 511) / 512) seek=5 >/dev/null 2>&1
 
 bochs:
 	@bochs -qf debug/bochs.cnf

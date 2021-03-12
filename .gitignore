@@ -6,3 +6,4 @@
 config.old
 include/linux/autoconf.h
 boot/bootsect
+tools/system
