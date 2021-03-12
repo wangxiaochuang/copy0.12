@@ -140,21 +140,21 @@ track:
     .word 0
 
 read_it:
-    mov %es, %ax
+    mov %es, %ax        // es -> 0x1000 inc 0x1000
     test $0x0fff, %ax
 die:
     jne die             // es must be at 64KB boundary
     xor %bx, %bx
 rp_read:
     mov %es, %ax
-    sub $SYSSEG, %ax
+    sub $SYSSEG, %ax    // es - 0x1000 = alread read
     cmp %ax, syssize
     jbe ok1_read        // 每次es会加0x1000，ax - SYSSEG就是已经读取数量，如果小于syssize，说明还要读
     ret
 ok1_read:
     cs
     mov sectors, %ax
-    sub sread, %ax      
+    sub sread, %ax      // 每磁道扇区数减去已经读的该磁道扇区，就是需要读的，供read_track使用
     mov %ax, %cx        // 当前磁道剩余的扇区数
     shl $9, %cx         // cx * 512
     add %bx, %cx        // 此次读操作后，段内共读入的字节数
@@ -162,20 +162,20 @@ ok1_read:
     je ok2_read
     xor %ax, %ax
     sub %bx, %ax        // 0减去某数就是概述64KB的补值
-    shr $9, ax
+    shr $9, %ax         // 需要读的扇区数，read_track里用
 ok2_read:
     call read_track
     mov %ax, %cx
-    add sread, %ax
+    add sread, %ax      // 增加已读的记录
     cs
     cmp sectors, %ax    // 看看是否超过最大扇区数
     jne ok3_read
-    mov $1, %ax
-    sub head, %ax
-    jne ok4_read
-    inc track
+    mov $1, %ax         
+    sub head, %ax       // 判断当前磁头号
+    jne ok4_read        // 如果是0磁头，则再取读1磁头面的扇区数据
+    incw track          // 否则读下一磁道
 ok4_read:
-    mov %ax, %head
+    mov %ax, head
     xor %ax, %ax
 ok3_read:
     mov %ax, sread
@@ -196,14 +196,14 @@ read_track:
     int $0x10
     popa
 
-    mov track, %dx
-    mov sread, %dx
-    inc %cx
-    mov %dl, %ch
-    mov head, %dx
-    mov %dl, %dh
-    and $0x0100, %dx
-    mov $2, %ah
+    mov track, %dx      // 当前磁道号
+    mov sread, %cx      // 已经读的扇区数
+    inc %cx             // 下一个要读的起始扇区
+    mov %dl, %ch        // ch: 当前磁道号
+    mov head, %dx           
+    mov %dl, %dh        // dh: 当前磁头号，dl: 驱动器号（0表示当前A驱动器）
+    and $0x0100, %dx    // 磁头号不会大于1，驱动器号是0，所以与操作
+    mov $2, %ah         // 读磁盘扇区功能号
 
     push %dx
     push %cx
@@ -211,7 +211,7 @@ read_track:
     push %ax
 
     int $0x13
-    jc bad_rt
+    jc bad_rt           // 出错会修改进位标志，跳转到bad_rt
     add $8, %sp
     popa
     ret
