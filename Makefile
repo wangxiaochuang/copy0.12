@@ -32,13 +32,12 @@ ROOT_DEV = CURRENT
 
 SVGA_MODE =	-DSVGA_MODE=NORMAL_VGA
 
-CFLAGS	= -m32 -c -Wall -lasan -ggdb -gstabs+ -nostdinc -fno-pic -fno-builtin -fno-stack-protector -I include
+CFLAGS	= -m32 -c -Wall -lasan -ggdb -gstabs+ -nostdinc -fno-pic -fno-builtin -fno-stack-protector
 
 AS	= as
 LD	= ld
 HOSTCC = gcc
-# CC	= gcc -D__KERNEL__
-CC	= gcc
+CC	= gcc -D__KERNEL__
 MAKE = make
 # CPP	= cpp -Iinclude
 CPP	= $(CC) -E
@@ -46,16 +45,17 @@ AR = ar
 STRIP = strip
 LDFLAGS	= -N --oformat binary -nostdlib
 
-ARCHIVES	= kernel/kernel.o mm/mm.o fs/fs.o net/net.o ipc/ipc.o
+ARCHIVES	= kernel/kernel.o fs/fs.o mm/mm.o #net/net.o ipc/ipc.o
 FILESYSTEMS	= fs/filesystems.a
-DRIVERS = drivers/block/block.a \
-		 drivers/char/char.a \
-		 drivers/net/net.a \
-		 ibcs/ibcs.o
+# DRIVERS = drivers/block/block.a \
+# 		 drivers/char/char.a \
+# 		 drivers/net/net.a \
+# 		 ibcs/ibcs.o
+DRIVERS = 
 LIBS	= lib/lib.a
-SUBDIRS	= kernel drivers mm fs net ipc ibcs lib
+SUBDIRS	= kernel fs lib mm drivers #net ipc ibcs
 
-KERNELHDRS	=/usr/src/linux/include
+C_INCLUDE_PATH	=/home/ubuntu/myos/copy0.12/include
 
 ifdef CONFIG_SCSI
 DRIVERS := $(DRIVERS) drivers/scsi/scsi.a
@@ -70,7 +70,7 @@ DRIVERS := $(DRIVERS) drivers/FPU-emu/math.a
 endif
 
 .S.o:
-	$(CC) -I include -c -o $@ $<
+	$(CC) -c -o $@ $<
 .c.o:
 	$(CC) $(CFLAGS) -o $@ $<
 
@@ -102,8 +102,12 @@ boot/bootsect: boot/bootsect.S include/linux/config.h
 	$(CC) -I include -c -o boot/bootsect.o boot/bootsect.S
 	$(LD) $(LDFLAGS) -Ttext 0x0 -e 0 -o boot/bootsect boot/bootsect.o
 
-tools/system: boot/head.o
-	$(LD) $(LDFLAGS) -Ttext 0x1000 -e startup_32 boot/head.o -o tools/system
+tools/system: boot/head.o init/main.o linuxsubdirs
+	$(LD) $(LDFLAGS) -Ttext 0x1000 -e startup_32 boot/head.o init/main.o \
+	$(ARCHIVES) \
+	$(DRIVERS) \
+	$(LIBS) \
+	-o tools/system
 
 boot/setup: boot/setup.S include/linux/config.h
 	$(CC) -I include -c -o boot/setup.o boot/setup.S
@@ -115,6 +119,21 @@ zdisk: zImage
 	dd conv=notrunc if=boot/bootsect of=$(VHD) bs=512 count=$(shell expr $(shell expr `stat -c %s boot/bootsect` + 511) / 512) seek=0 >/dev/null 2>&1
 	dd conv=notrunc if=boot/setup of=$(VHD) bs=512 count=$(shell expr $(shell expr `stat -c %s boot/setup` + 511) / 512) seek=1 >/dev/null 2>&1
 	dd conv=notrunc if=tools/system of=$(VHD) bs=512 count=$(shell expr $(shell expr `stat -c %s tools/system` + 511) / 512) seek=5 >/dev/null 2>&1
+
+fs: dummy
+	$(MAKE) linuxsubdirs SUBDIRS=fs
+
+lib: dummy
+	$(MAKE) linuxsubdirs SUBDIRS=lib
+
+mm: dummy
+	$(MAKE) linuxsubdirs SUBDIRS=mm
+
+kernel: dummy
+	$(MAKE) linuxsubdirs SUBDIRS=kernel
+
+drivers: dummy
+	$(MAKE) linuxsubdirs SUBDIRS=drivers
 
 bochs:
 	@bochs -qf debug/bochs.cnf
