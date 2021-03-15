@@ -2,6 +2,8 @@
 #define _LINUX_MM_H
 
 #include <linux/page.h>
+#include <linux/sched.h>
+#include <linux/kernel.h>
 
 struct vm_area_struct {
 	struct task_struct * vm_task;		/* VM area parameters */

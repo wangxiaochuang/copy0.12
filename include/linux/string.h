@@ -7,6 +7,24 @@
 #define NULL ((void *) 0)
 #endif
 
+static inline int strcmp(const char * cs,const char * ct) {
+register int __res __asm__("ax");
+__asm__("cld\n"
+	"1:\tlodsb\n\t"
+	"scasb\n\t"
+	"jne 2f\n\t"
+	"testb %%al,%%al\n\t"
+	"jne 1b\n\t"
+	"xorl %%eax,%%eax\n\t"
+	"jmp 3f\n"
+	"2:\tmovl $1,%%eax\n\t"
+	"jb 3f\n\t"
+	"negl %%eax\n"
+	"3:"
+	:"=a" (__res):"D" (cs),"S" (ct));
+return __res;
+}
+
 static inline int strncmp(const char * cs,const char * ct,size_t count) {
 	register int __res __asm__("ax");
 __asm__("cld\n"
@@ -25,6 +43,22 @@ __asm__("cld\n"
 	"4:"
 	:"=a" (__res):"D" (cs),"S" (ct),"c" (count));
 	return __res;
+}
+
+static inline char * strchr(const char * s,char c) {
+register char * __res __asm__("ax");
+__asm__("cld\n\t"
+	"movb %%al,%%ah\n"
+	"1:\tlodsb\n\t"
+	"cmpb %%ah,%%al\n\t"
+	"je 2f\n\t"
+	"testb %%al,%%al\n\t"
+	"jne 1b\n\t"
+	"movl $1,%1\n"
+	"2:\tmovl %1,%0\n\t"
+	"decl %0"
+	:"=a" (__res):"S" (s),"0" (c));
+return __res;
 }
 
 static inline size_t strlen(const char * s) {

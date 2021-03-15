@@ -1,6 +1,6 @@
 SUBDIRS = 
 
-OBJS = super.o
+OBJS = super.o devices.o
 
 all: fs.o
 

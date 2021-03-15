@@ -6,6 +6,11 @@
 typedef unsigned int size_t;
 #endif
 
+#ifndef _SSIZE_T
+#define _SSIZE_T
+typedef int ssize_t;
+#endif
+
 #ifndef _TIME_T
 #define _TIME_T
 typedef long time_t;
@@ -29,6 +34,10 @@ typedef unsigned char u_char;
 typedef unsigned short u_short;
 typedef unsigned int u_int;
 typedef unsigned long u_long;
+
+typedef unsigned char cc_t;
+typedef unsigned int speed_t;
+typedef unsigned long tcflag_t;
 
 #undef __FDSET_LONGS
 #define __FDSET_LONGS 8

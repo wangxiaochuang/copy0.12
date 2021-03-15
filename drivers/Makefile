@@ -1,4 +1,4 @@
-SUBDIRS = 
+SUBDIRS = char
 ifdef CONFIG_MATH_EMULATION
 SUBDIRS := $(SUBDIRS) FPU-emu
 endif

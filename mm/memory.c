@@ -15,7 +15,6 @@ unsigned long paging_init(unsigned long start_mem, unsigned long end_mem) {
     unsigned long *pg_table;
     unsigned long tmp;
     unsigned long address;
-    return 0;
 
     start_mem = PAGE_ALIGN(start_mem);
     address = 0;
@@ -25,6 +24,7 @@ unsigned long paging_init(unsigned long start_mem, unsigned long end_mem) {
         if (!tmp) {
             tmp = start_mem | PAGE_TABLE;
             *(pg_dir + 768) = tmp;
+            // 用作页表
             start_mem += PAGE_SIZE;
         }
         *pg_dir = tmp;              // 为了初始化，同时也映射到虚拟地址的开始部分

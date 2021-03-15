@@ -202,6 +202,12 @@ struct inode_operations {
 	int (*permission) (struct inode *, int);
 };
 
+extern int register_chrdev(unsigned int, const char *, struct file_operations *);
+extern int unregister_chrdev(unsigned int major, const char * name);
+extern int chrdev_open(struct inode * inode, struct file * filp);
+extern struct file_operations def_chr_fops;
+extern struct inode_operations chrdev_inode_operations;
+
 extern dev_t ROOT_DEV;
 
 #endif

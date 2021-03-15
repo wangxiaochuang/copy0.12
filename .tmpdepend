@@ -1,0 +1,44 @@
+init/main.o: init/main.c /usr/include/stdc-predef.h \
+ /mnt/hgfs/myos/copy0.12/include/asm/system.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/segment.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/sched.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/tasks.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/head.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/fs.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/linkage.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/wait.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/types.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/pipe_fs_i.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/minix_fs_i.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/ext_fs_i.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/ext2_fs_i.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/hpfs_fs_i.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/msdos_fs_i.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/iso_fs_i.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/nfs_fs_i.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/nfs.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/xia_fs_i.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/sysv_fs_i.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/minix_fs_sb.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/ext_fs_sb.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/ext2_fs_sb.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/hpfs_fs_sb.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/msdos_fs_sb.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/iso_fs_sb.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/nfs_fs_sb.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/xia_fs_sb.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/sysv_fs_sb.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/mm.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/page.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/kernel.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/signal.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/param.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/resource.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/vm86.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/math_emu.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/tty.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/termios.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/string.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/ctype.h \
+ /mnt/hgfs/myos/copy0.12/include/linux/ioport.h
+tools/version.o: tools/version.c /usr/include/stdc-predef.h tools/./version.h

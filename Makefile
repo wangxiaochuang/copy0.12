@@ -51,7 +51,7 @@ FILESYSTEMS	= fs/filesystems.a
 # 		 drivers/char/char.a \
 # 		 drivers/net/net.a \
 # 		 ibcs/ibcs.o
-DRIVERS = 
+DRIVERS = drivers/char/char.a 
 LIBS	= lib/lib.a
 SUBDIRS	= kernel fs lib mm drivers #net ipc ibcs
 
