@@ -32,7 +32,7 @@ ROOT_DEV = CURRENT
 
 SVGA_MODE =	-DSVGA_MODE=NORMAL_VGA
 
-CFLAGS	= -m32 -c -Wall -lasan -ggdb -gstabs+ -nostdinc -fno-pic -fno-builtin -fno-stack-protector
+CFLAGS	= -m32 -c -Wall -lasan -ggdb -gstabs+ -nostdinc -Wno-unused-but-set-variable -Wno-unused-variable -fno-pic -fno-builtin -fno-stack-protector
 
 AS	= as
 LD	= ld

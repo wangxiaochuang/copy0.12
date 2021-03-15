@@ -28,4 +28,6 @@ struct termios {
 	cc_t c_cc[NCCS];		/* control characters */
 };
 
+#define N_TTY		0
+
 #endif

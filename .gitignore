@@ -1,6 +1,7 @@
 .vscode
 *.bin
 *.o
+*.a
 .config
 .depend
 config.old

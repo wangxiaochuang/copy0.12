@@ -1,10 +1,15 @@
 #ifndef _LINUX_TIMER_H
 #define _LINUX_TIMER_H
 
+#define BLANK_TIMER	0
+
 struct timer_struct {
 	unsigned long expires;
 	void (*fn)(void);
 };
+
+extern unsigned long timer_active;
+extern struct timer_struct timer_table[32];
 
 struct timer_list {
 	struct timer_list *next;

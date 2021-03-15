@@ -72,8 +72,7 @@ __asm__("cld\n\t"
 return __res;
 }
 
-static inline int memcmp(const void * cs, const void * ct, size_t count)
-{
+static inline int memcmp(const void * cs, const void * ct, size_t count) {
 register int __res __asm__("ax");
 __asm__("cld\n\t"
 	"repe\n\t"
@@ -85,6 +84,15 @@ __asm__("cld\n\t"
 	"1:"
 	:"=a" (__res):"0" (0),"D" (cs),"S" (ct),"c" (count));
 return __res;
+}
+
+static inline void * memset(void * s, char c, size_t count) {
+__asm__("cld\n\t"
+	"rep\n\t"
+	"stosb"
+	: /* no output */
+	:"a" (c),"D" (s),"c" (count));
+return s;
 }
 
 #endif

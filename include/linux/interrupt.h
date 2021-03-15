@@ -19,4 +19,8 @@ enum {
 	KEYBOARD_BH
 };
 
+static inline void mark_bh(int nr) {
+	__asm__ __volatile__("orl %1,%0":"=m" (bh_active):"ir" (1<<nr));
+}
+
 #endif

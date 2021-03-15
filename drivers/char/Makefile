@@ -1,4 +1,4 @@
-OBJS  = mem.o tty_io.o
+OBJS  = mem.o tty_io.o keyboard.o console.o
 
 all: char.a
 
