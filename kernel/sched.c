@@ -80,6 +80,153 @@ static struct timer_list * next_timer = NULL;
 unsigned long timer_active = 0;
 struct timer_struct timer_table[32];
 
+unsigned long itimer_ticks = 0;
+unsigned long itimer_next = ~0;
+static unsigned long lost_ticks = 0;
+
+asmlinkage void schedule(void) {
+    int c;
+    struct task_struct *p;
+    struct task_struct *next;
+    unsigned long ticks;
+
+    cli();
+    ticks = itimer_ticks;
+    itimer_ticks = 0;
+    itimer_next = ~0;
+    sti();
+    need_resched = 0;
+    p = &init_task;
+    for (;;) {
+        if ((p = p->next_task) == &init_task)
+            goto confuse_gcc1;
+        if (ticks && p->it_real_value) {
+            if (p->it_real_value <= ticks) {
+                send_sig(SIGALRM, p, 1);
+                if (!p->it_real_incr) {
+                    p->it_real_value = 0;
+                    goto end_itimer;
+                }
+                do {
+                    p->it_real_value += p->it_real_incr;
+                } while (p->it_real_value <= ticks);
+            }
+            p->it_real_value -= ticks;
+            if (p->it_real_value < itimer_next)
+                itimer_next = p->it_real_value;
+        }
+end_itimer:
+        if (p->state != TASK_INTERRUPTIBLE)
+            continue;
+        if (p->signal & ~p->blocked) {
+            p->state = TASK_RUNNING;
+            continue;
+        }
+        if (p->timeout && p->timeout <= jiffies) {
+            p->timeout = 0;
+            p->state = TASK_RUNNING;
+        }
+    }
+
+confuse_gcc1:
+    c = -1;
+    next = p = &init_task;
+    for (;;) {
+        if ((p = p->next_task) == &init_task)
+            goto confuse_gcc2;
+    } 
+confuse_gcc2:
+    if (!c) {
+        for_each_task(p)
+            p->counter = (p->counter >> 1) + p->priority;
+    }
+    if (current != next)
+        kstat.context_swtch++;
+    switch_to(next);
+    if (current->debugreg[7]) {
+        loaddebug(0);
+		loaddebug(1);
+		loaddebug(2);
+		loaddebug(3);
+		loaddebug(6);
+    }
+}
+
+void wake_up(struct wait_queue **q) {
+    struct wait_queue *tmp;
+    struct task_struct *p;
+
+    if (!q || !(tmp = *q))
+        return;
+    do {
+        if ((p = tmp->task) != NULL) {
+            if ((p->state == TASK_UNINTERRUPTIBLE) || (p->state == TASK_INTERRUPTIBLE)) {
+                p->state = TASK_RUNNING;
+                if (p->counter > current->counter)
+                    need_resched = 1;
+            }
+        }
+        if (!tmp->next) {
+            printk("wait_queue is bad (eip = %08lx)\n",((unsigned long *) q)[-1]);
+			printk("        q = %p\n",q);
+			printk("       *q = %p\n",*q);
+			printk("      tmp = %p\n",tmp);
+			break;
+        }
+        tmp = tmp->next;
+    } while (tmp != *q);
+}
+
+void wake_up_interruptible(struct wait_queue **q) {
+    struct wait_queue *tmp;
+	struct task_struct * p;
+
+    if (!q || !(tmp = *q))
+        return;
+    do {
+        if ((p = tmp->task) != NULL) {
+            if (p->state == TASK_INTERRUPTIBLE) {
+				p->state = TASK_RUNNING;
+				if (p->counter > current->counter)
+					need_resched = 1;
+			}
+        }
+        if (!tmp->next) {
+			printk("wait_queue is bad (eip = %08lx)\n",((unsigned long *) q)[-1]);
+			printk("        q = %p\n",q);
+			printk("       *q = %p\n",*q);
+			printk("      tmp = %p\n",tmp);
+			break;
+		}
+        tmp = tmp->next;
+    } while (tmp != *q);
+}
+
+static inline void __sleep_on(struct wait_queue **p, int state) {
+    unsigned long flags;
+    struct wait_queue wait = { current, NULL };
+
+    if (!p)
+        return;
+    if (current == task[0])
+        panic("task[0] trying to sleep");
+    current->state = state;
+    add_wait_queue(p, &wait);
+    save_flags(flags);
+    sti();
+    schedule();
+    remove_wait_queue(p, &wait);
+    restore_flags(flags);
+}
+
+void interruptible_sleep_on(struct wait_queue **p) {
+    __sleep_on(p,TASK_INTERRUPTIBLE);
+}
+
+void sleep_on(struct wait_queue **p) {
+	__sleep_on(p,TASK_UNINTERRUPTIBLE);
+}
+
 static void timer_bh(void * unused) {
     unsigned long mask;
     struct timer_struct *tp;

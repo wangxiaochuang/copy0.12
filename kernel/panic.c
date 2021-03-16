@@ -3,6 +3,7 @@
 #include <linux/kernel.h>
 
 extern int vsprintf(char * buf, const char * fmt, va_list args);
+extern void console_print(const char *);
 
 NORET_TYPE void panic(const char * fmt, ...) {
     static char buf[1024];
@@ -11,6 +12,7 @@ NORET_TYPE void panic(const char * fmt, ...) {
     va_start(args, fmt);
     vsprintf(buf, fmt, args);
     va_end(args);
-    printk(KERN_EMERG "Kernel panic: %s\n", buf);
+    // printk(KERN_EMERG "Kernel panic: %s\n", buf);
+    console_print(buf);
     for(;;);
 }

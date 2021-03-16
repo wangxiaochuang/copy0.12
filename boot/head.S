@@ -45,9 +45,14 @@ startup_32:
     xorl %eax, %eax
     movl $512, %ecx
     rep stosl
+    // 0x90020的位置如果是 0xA33F，那么就是command line
     cmpw $CL_MAGIC, CL_MAGIC_ADDR
     jne 1f
-    hlt
+    movl $empty_zero_page+2048, %edi
+    movzwl CL_OFFSET, %esi      // mov zero-extended word to long，这里只取低16位
+    addl $CL_BASE_ADDR, %esi
+    movl $2048, %ecx
+    rep movsb
 1:
     movl %esp, %edi
     andl $0xfffffffc, %esp

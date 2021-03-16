@@ -1,4 +1,4 @@
-OBJS  = mem.o tty_io.o keyboard.o console.o
+OBJS  = mem.o tty_io.o keyboard.o console.o defkeymap.o
 
 all: char.a
 

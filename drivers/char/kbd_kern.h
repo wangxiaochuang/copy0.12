@@ -2,6 +2,7 @@
 #define _KBD_KERN_H
 
 #include <linux/interrupt.h>
+#define set_leds() mark_bh(KEYBOARD_BH)
 
 #include <linux/keyboard.h>
 
@@ -29,6 +30,20 @@ struct kbd_struct {
 #define VC_MEDIUMRAW	7	/* medium raw (keycode) mode */
 };
 
+extern struct kbd_struct kbd_table[];
+
 extern unsigned long kbd_init(unsigned long);
+
+static inline int vc_kbd_mode(struct kbd_struct * kbd, int flag) {
+	return ((kbd->modeflags >> flag) & 1);
+}
+
+static inline void set_vc_kbd_mode(struct kbd_struct * kbd, int flag) {
+	kbd->modeflags |= 1 << flag;
+}
+
+static inline void clr_vc_kbd_mode(struct kbd_struct * kbd, int flag) {
+	kbd->modeflags &= ~(1 << flag);
+}
 
 #endif

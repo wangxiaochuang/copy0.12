@@ -235,6 +235,11 @@ extern int need_resched;
 
 #define CURRENT_TIME (xtime.tv_sec)
 
+extern void sleep_on(struct wait_queue ** p);
+extern void interruptible_sleep_on(struct wait_queue ** p);
+extern void wake_up(struct wait_queue ** p);
+extern void wake_up_interruptible(struct wait_queue ** p);
+
 extern int send_sig(unsigned long sig,struct task_struct * p,int priv);
 
 extern int request_irq(unsigned int irq,void (*handler)(int));
@@ -254,6 +259,62 @@ __asm__("str %%ax\n\t" \
 	:"=a" (n) \
 	:"0" (0),"i" (FIRST_TSS_ENTRY<<3))
 
+#define switch_to(tsk) \
+__asm__("cmpl %%ecx,current\n\t" \
+	"je 1f\n\t" \
+	"cli\n\t" \
+	"xchgl %%ecx,current\n\t" \
+	"ljmp %0\n\t" \
+	"sti\n\t" \
+	"cmpl %%ecx,last_task_used_math\n\t" \
+	"jne 1f\n\t" \
+	"clts\n" \
+	"1:" \
+	: /* no output */ \
+	:"m" (*(((char *)&tsk->tss.tr)-4)), \
+	 "c" (tsk))
+
+static inline void add_wait_queue(struct wait_queue ** p, struct wait_queue * wait) {
+	unsigned long flags;
+	save_flags(flags);
+	cli();
+	if (!*p) {
+		wait->next = wait;
+		*p = wait;
+	} else {
+		wait->next = (*p)->next;
+		(*p)->next = wait;
+	}
+	restore_flags(flags);
+}
+
+static inline void remove_wait_queue(struct wait_queue ** p, struct wait_queue * wait) {
+	unsigned long flags;
+	struct wait_queue *tmp;
+	save_flags(flags);
+	cli();
+	if ((*p == wait) && ((*p = wait->next) == wait)) {
+		*p = NULL;
+	} else {
+		tmp = wait;
+		while (tmp->next != wait) {
+			tmp = tmp->next;
+		}
+		tmp->next = wait->next;
+	}
+	wait->next = NULL;
+	restore_flags(flags);
+}
+
+#define for_each_task(p) \
+	for (p = &init_task ; (p = p->next_task) != &init_task ; )
+
 extern struct desc_struct default_ldt;
+
+#define loaddebug(register) \
+		__asm__("movl %0,%%edx\n\t" \
+			"movl %%edx,%%db" #register "\n\t" \
+			: /* no output */ \
+			:"m" (current->debugreg[register]));
 
 #endif

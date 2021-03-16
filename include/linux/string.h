@@ -72,6 +72,23 @@ __asm__("cld\n\t"
 return __res;
 }
 
+static inline void * memcpy(void * to, const void * from, size_t n) {
+__asm__("cld\n\t"
+	"movl %%edx, %%ecx\n\t"
+	"shrl $2,%%ecx\n\t"
+	"rep ; movsl\n\t"
+	"testb $1,%%dl\n\t"
+	"je 1f\n\t"
+	"movsb\n"
+	"1:\ttestb $2,%%dl\n\t"
+	"je 2f\n\t"
+	"movsw\n"
+	"2:\n"
+	: /* no output */
+	:"d" (n),"D" ((long) to),"S" ((long) from));
+return (to);
+}
+
 static inline int memcmp(const void * cs, const void * ct, size_t count) {
 register int __res __asm__("ax");
 __asm__("cld\n\t"

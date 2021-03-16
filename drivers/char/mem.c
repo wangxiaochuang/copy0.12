@@ -31,5 +31,5 @@ long chr_dev_init(long mem_start, long mem_end) {
     mem_start = lp_init(mem_start);
 #endif
 
-    return 0;
+    return mem_start;
 }
