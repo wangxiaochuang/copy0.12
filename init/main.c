@@ -224,9 +224,8 @@ asmlinkage void start_kernel(void) {
         memory_start = 1024*1024;
         low_memory_start = (unsigned long) &end;
     }
+
     low_memory_start = PAGE_ALIGN(low_memory_start);
-    memory_start = chr_dev_init(memory_start, memory_end);
-    panic("iiiiiiiiiiii %p", &end);
     memory_start = paging_init(memory_start, memory_end);
     if (strncmp((char *) 0x0FFFD9, "EISA", 4) == 0)
         EISA_bus = 1;
@@ -241,6 +240,6 @@ asmlinkage void start_kernel(void) {
 	memory_start += prof_len * sizeof(unsigned long);
 #endif
     memory_start = kmalloc_init(memory_start, memory_end);
-    // memory_start = chr_dev_init(memory_start, memory_end);
+    memory_start = chr_dev_init(memory_start, memory_end);
     for(;;);
 }

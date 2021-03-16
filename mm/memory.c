@@ -18,7 +18,7 @@ unsigned long paging_init(unsigned long start_mem, unsigned long end_mem) {
 
     start_mem = PAGE_ALIGN(start_mem);
     address = 0;
-    pg_dir = swapper_pg_dir;
+    pg_dir = swapper_pg_dir;            // 0x2000 => [0x0000 - 0x4000)
     while (address < end_mem) {
         tmp = *(pg_dir + 768);      // at virtual addr 0xC0000000
         if (!tmp) {
@@ -38,6 +38,7 @@ unsigned long paging_init(unsigned long start_mem, unsigned long end_mem) {
                 *pg_table = 0;
             address += PAGE_SIZE;
         }
+        mypanic("address: %u, end_mem: %u, *pg_table: %u", address - PAGE_SIZE, end_mem, *(pg_table - 1));
     }
     invalidate();
     return start_mem;

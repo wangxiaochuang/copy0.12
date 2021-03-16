@@ -55,7 +55,8 @@ DRIVERS = drivers/char/char.a
 LIBS	= lib/lib.a
 SUBDIRS	= kernel fs lib mm drivers #net ipc ibcs
 
-C_INCLUDE_PATH	=/home/ubuntu/myos/copy0.12/include
+# C_INCLUDE_PATH	=/home/ubuntu/myos/copy0.12/include
+C_INCLUDE_PATH	=$(shell pwd)/include
 
 ifdef CONFIG_SCSI
 DRIVERS := $(DRIVERS) drivers/scsi/scsi.a
