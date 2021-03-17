@@ -8,7 +8,8 @@ asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long error_code) {
 
 /**
  * 用于将所有物理内存先映射到0x0和0xC0000000虚拟地址空间
- * head.S里已经映射了4M物理空间，这里继续映射剩余物理内存
+ * head.S里已经映射了0-4M物理空间，这里从0映射所有物理内存
+ * 页目录表用来存放页表，从start_mem开始分配，第一个页表已经存在
  **/
 unsigned long paging_init(unsigned long start_mem, unsigned long end_mem) {
     unsigned long *pg_dir;
@@ -38,7 +39,6 @@ unsigned long paging_init(unsigned long start_mem, unsigned long end_mem) {
                 *pg_table = 0;
             address += PAGE_SIZE;
         }
-        mypanic("address: %u, end_mem: %u, *pg_table: %u", address - PAGE_SIZE, end_mem, *(pg_table - 1));
     }
     invalidate();
     return start_mem;

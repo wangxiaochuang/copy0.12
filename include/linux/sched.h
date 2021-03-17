@@ -20,6 +20,24 @@ extern int EISA_bus;
 
 #define IO_BITMAP_SIZE	32
 
+#define FSHIFT		11		/* nr of bits of precision */
+#define FIXED_1		(1<<FSHIFT)	/* 1.0 as fixed-point */
+#define LOAD_FREQ	(5*HZ)		/* 5 sec intervals */
+#define EXP_1		1884		/* 1/exp(5sec/1min) as fixed-point */
+#define EXP_5		2014		/* 1/exp(5sec/5min) */
+#define EXP_15		2037		/* 1/exp(5sec/15min) */
+
+#define CALC_LOAD(load,exp,n) \
+	load *= exp; \
+	load += n*(FIXED_1-exp); \
+	load >>= FSHIFT;
+
+#define CT_TO_SECS(x)	((x) / HZ)
+#define CT_TO_USECS(x)	(((x) % HZ) * 1000000/HZ)
+
+#define FIRST_TASK task[0]
+#define LAST_TASK task[NR_TASKS-1]
+
 #include <linux/head.h>
 #include <linux/fs.h>
 #include <linux/mm.h>

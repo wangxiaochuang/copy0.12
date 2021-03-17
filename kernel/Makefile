@@ -1,4 +1,5 @@
-OBJS = sched.o sys_call.o traps.o printk.o vsprintf.o exit.o irq.o signal.o sys.o panic.o ioport.o
+OBJS = sched.o sys_call.o traps.o printk.o vsprintf.o exit.o irq.o signal.o sys.o panic.o ioport.o \
+	time.o
 
 all: kernel.o
 

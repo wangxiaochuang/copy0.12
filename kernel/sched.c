@@ -22,6 +22,21 @@ long tick = 1000000 / HZ;               /* timer interrupt period */
 volatile struct timeval xtime;          // the current time
 int tickadj = 500/HZ;                   // microsecs
 
+int time_status = TIME_BAD;     /* clock synchronization status */
+long time_offset = 0;           /* time adjustment (us) */
+long time_constant = 0;         /* pll time constant */
+long time_tolerance = MAXFREQ;  /* frequency tolerance (ppm) */
+long time_precision = 1; 	/* clock precision (us) */
+long time_maxerror = 0x70000000;/* maximum error */
+long time_esterror = 0x70000000;/* estimated error */
+long time_phase = 0;            /* phase offset (scaled us) */
+long time_freq = 0;             /* frequency offset (scaled ppm) */
+long time_adj = 0;              /* tick adjust (scaled 1 / HZ) */
+long time_reftime = 0;          /* time at last adjustment (s) */
+
+long time_adjust = 0;
+long time_adjust_step = 0;
+
 int need_resched = 0;
 
 int hard_math = 0;
@@ -227,6 +242,92 @@ void sleep_on(struct wait_queue **p) {
 	__sleep_on(p,TASK_UNINTERRUPTIBLE);
 }
 
+unsigned long avenrun[3] = { 0,0,0 };
+
+/*
+ * Nr of active tasks - counted in fixed-point numbers
+ */
+static unsigned long count_active_tasks(void) {
+	struct task_struct **p;
+	unsigned long nr = 0;
+
+	for(p = &LAST_TASK; p > &FIRST_TASK; --p)
+		if (*p && ((*p)->state == TASK_RUNNING ||
+			   (*p)->state == TASK_UNINTERRUPTIBLE ||
+			   (*p)->state == TASK_SWAPPING))
+			nr += FIXED_1;
+	return nr;
+}
+
+static inline void calc_load(void) {
+	unsigned long active_tasks; /* fixed-point */
+	static int count = LOAD_FREQ;
+
+	if (count-- > 0)
+		return;
+	count = LOAD_FREQ;
+	active_tasks = count_active_tasks();
+	CALC_LOAD(avenrun[0], EXP_1, active_tasks);
+	CALC_LOAD(avenrun[1], EXP_5, active_tasks);
+	CALC_LOAD(avenrun[2], EXP_15, active_tasks);
+}
+
+static void second_overflow(void) {
+	long ltemp;
+	/* last time the cmos clock got updated */
+	static long last_rtc_update=0;
+	extern int set_rtc_mmss(unsigned long);
+
+	/* Bump the maxerror field */
+	time_maxerror = (0x70000000-time_maxerror < time_tolerance) ?
+	  0x70000000 : (time_maxerror + time_tolerance);
+
+	/* Run the PLL */
+	if (time_offset < 0) {
+		ltemp = (-(time_offset+1) >> (SHIFT_KG + time_constant)) + 1;
+		time_adj = ltemp << (SHIFT_SCALE - SHIFT_HZ - SHIFT_UPDATE);
+		time_offset += (time_adj * HZ) >> (SHIFT_SCALE - SHIFT_UPDATE);
+		time_adj = - time_adj;
+	} else if (time_offset > 0) {
+		ltemp = ((time_offset-1) >> (SHIFT_KG + time_constant)) + 1;
+		time_adj = ltemp << (SHIFT_SCALE - SHIFT_HZ - SHIFT_UPDATE);
+		time_offset -= (time_adj * HZ) >> (SHIFT_SCALE - SHIFT_UPDATE);
+	} else {
+		time_adj = 0;
+	}
+
+	time_adj += (time_freq >> (SHIFT_KF + SHIFT_HZ - SHIFT_SCALE))
+	    + FINETUNE;
+
+	/* Handle the leap second stuff */
+	switch (time_status) {
+		case TIME_INS:
+		/* ugly divide should be replaced */
+		if (xtime.tv_sec % 86400 == 0) {
+			xtime.tv_sec--; /* !! */
+			time_status = TIME_OOP;
+			printk("Clock: inserting leap second 23:59:60 GMT\n");
+		}
+		break;
+
+		case TIME_DEL:
+		/* ugly divide should be replaced */
+		if (xtime.tv_sec % 86400 == 86399) {
+			xtime.tv_sec++;
+			time_status = TIME_OK;
+			printk("Clock: deleting leap second 23:59:59 GMT\n");
+		}
+		break;
+
+		case TIME_OOP:
+		time_status = TIME_OK;
+		break;
+	}
+	if (xtime.tv_sec > last_rtc_update + 660)
+	    if (set_rtc_mmss(xtime.tv_sec) == 0)
+	        last_rtc_update = xtime.tv_sec;
+}
+
 static void timer_bh(void * unused) {
     unsigned long mask;
     struct timer_struct *tp;
@@ -256,7 +357,101 @@ static void timer_bh(void * unused) {
 }
 
 static void do_timer(struct pt_regs * regs) {
+    unsigned long mask;
+    struct timer_struct *tp;
 
+    long ltemp;
+
+    time_phase += time_adj;
+    if (time_phase < -FINEUSEC) {
+        ltemp = -time_phase >> SHIFT_SCALE;
+        time_phase += ltemp << SHIFT_SCALE;
+        xtime.tv_usec += tick + time_adjust_step - ltemp;
+    } else if (time_phase > FINEUSEC) {
+        ltemp = time_phase >> SHIFT_SCALE;
+		time_phase -= ltemp << SHIFT_SCALE;
+		xtime.tv_usec += tick + time_adjust_step + ltemp;
+    } else {
+        xtime.tv_usec += tick + time_adjust_step;
+    }
+    if (time_adjust) {
+        if (time_adjust > tickadj)
+	        time_adjust_step = tickadj;
+	    else if (time_adjust < -tickadj)
+	        time_adjust_step = -tickadj;
+	    else
+	        time_adjust_step = time_adjust;
+        /* Reduce by this step the amount of time left  */
+	    time_adjust -= time_adjust_step;
+    } else {
+        time_adjust_step = 0;
+    }
+
+    if (xtime.tv_usec >= 1000000) {
+	    xtime.tv_usec -= 1000000;
+	    xtime.tv_sec++;
+	    second_overflow();
+	}
+
+    jiffies++;
+    calc_load();
+    if ((VM_MASK & regs->eflags) || (3 & regs->cs)) {
+        current->utime++;
+        if (current != task[0]) {
+            if (current->priority < 15)
+                kstat.cpu_nice++;
+            else
+                kstat.cpu_user++;
+        }
+        if (current->it_virt_value && !(--current->it_virt_value)) {
+            current->it_virt_value = current->it_virt_incr;
+            send_sig(SIGVTALRM, current, 1);
+        }
+    } else {
+        current->stime++;
+        if (current != task[0])
+            kstat.cpu_system++;
+#ifdef CONFIG_PROFILE
+		if (prof_buffer && current != task[0]) {
+			unsigned long eip = regs->eip;
+			eip >>= 2;
+			if (eip < prof_len)
+				prof_buffer[eip]++;
+		}
+#endif
+    }
+    if (current == task[0] || (--current->counter) <= 0) {
+        current->counter = 0;
+        need_resched = 1;
+    }
+    if (current->it_prof_value && !(--current->it_prof_value)) {
+		current->it_prof_value = current->it_prof_incr;
+		send_sig(SIGPROF,current,1);
+	}
+    for (mask = 1, tp = timer_table + 0; mask; tp++, mask += mask) {
+        if (mask > timer_active)
+            break;
+        if (!(mask & timer_active))
+            continue;
+        if (tp->expires > jiffies)
+            continue;
+        mark_bh(TIMER_BH);
+    }
+    cli();
+    itimer_ticks++;
+    if (itimer_ticks > itimer_next)
+        need_resched = 1;
+    if (next_timer) {
+        if (next_timer->expires) {
+            next_timer->expires--;
+            if (!next_timer->expires)
+                mark_bh(TIMER_BH);
+        } else {
+            lost_ticks++;
+            mark_bh(TIMER_BH);
+        }
+    }
+    sti();
 }
 
 void sched_init(void) {
@@ -278,7 +473,9 @@ void sched_init(void) {
         p->a = p->b = 0;
         p++;
     }
+    // NT标志用于控制程序的嵌套调用，这里复位，不允许
     __asm__("pushfl; andl $0xffffbfff, (%esp); popfl");
+    // 将gdt中的tss、ldt加载进tr、ldtr中，只明确加载一次，后面就不需要了
     load_TR(0);
     load_ldt(0);
     outb_p(0x34, 0x43);             /* binary, mode 2, LSB/MSB, ch 0 */

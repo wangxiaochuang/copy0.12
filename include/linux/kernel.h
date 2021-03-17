@@ -28,6 +28,8 @@ NORET_TYPE void mypanic(const char * fmt, ...)
 	__attribute__ ((NORET_AND format (printf, 1, 2)));
 NORET_TYPE void panic(const char * fmt, ...)
 	__attribute__ ((NORET_AND format (printf, 1, 2)));
+NORET_TYPE void do_exit(long error_code)
+	ATTRIB_NORET;
 asmlinkage int printk(const char *fmt, ...)
     __attribute__ ((format (printf, 1, 2)));
 

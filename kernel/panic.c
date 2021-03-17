@@ -38,5 +38,7 @@ NORET_TYPE void mypanic(const char * fmt, ...) {
     mybuf[len + 3] = ']';
     mybuf[len + 4] = '\0';
     raw_print(mybuf);
-    for(;;);
+    for(;;) {
+        __asm__("hlt");
+    };
 }

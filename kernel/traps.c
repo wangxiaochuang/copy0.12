@@ -10,6 +10,11 @@
 #include <asm/segment.h>
 #include <asm/io.h>
 
+static inline void console_verbose(void) {
+	extern int console_loglevel;
+	console_loglevel = 15;
+}
+
 #define DO_ERROR(trapnr, signr, str, name, tsk) \
 asmlinkage void do_##name(struct pt_regs *regs, long error_code) { \
     tsk->tss.error_code = error_code; \
@@ -19,6 +24,23 @@ asmlinkage void do_##name(struct pt_regs *regs, long error_code) { \
     send_sig(signr, tsk, 1); \
     die_if_kernel(str, regs, error_code); \
 }
+
+#define get_seg_byte(seg,addr) ({ \
+register char __res; \
+__asm__("push %%fs;mov %%ax,%%fs;movb %%fs:%2,%%al;pop %%fs" \
+	:"=a" (__res):"0" (seg),"m" (*(addr))); \
+__res;})
+
+#define get_seg_long(seg,addr) ({ \
+register unsigned long __res; \
+__asm__("push %%fs;mov %%ax,%%fs;movl %%fs:%2,%%eax;pop %%fs" \
+	:"=a" (__res):"0" (seg),"m" (*(addr))); \
+__res;})
+
+#define _fs() ({ \
+register unsigned short __res; \
+__asm__("mov %%fs,%%ax":"=a" (__res):); \
+__res;})
 
 void page_exception(void);
 
@@ -42,7 +64,37 @@ asmlinkage void reserved(void);
 asmlinkage void alignment_check(void);
 
 void die_if_kernel(char * str, struct pt_regs * regs, long err) {
+    int i;
+    unsigned long esp;
+    unsigned short ss;
 
+    esp = (unsigned long) &regs->esp;
+    ss = KERNEL_DS;
+    // eflags有vm标志或是用户代码段
+    if ((regs->eflags & VM_MASK) || (3 & regs->cs) == 3)
+        return;
+    if (regs->cs & 3) {
+        esp = regs->esp;
+        ss = regs->ss;
+    } 
+    console_verbose();
+    printk("%s: %04lx\n", str, err & 0xffff);
+	printk("EIP:    %04x:%08lx\nEFLAGS: %08lx\n", 0xffff & regs->cs,regs->eip,regs->eflags);
+	printk("eax: %08lx   ebx: %08lx   ecx: %08lx   edx: %08lx\n",
+		regs->eax, regs->ebx, regs->ecx, regs->edx);
+	printk("esi: %08lx   edi: %08lx   ebp: %08lx   esp: %08lx\n",
+		regs->esi, regs->edi, regs->ebp, esp);
+	printk("ds: %04x   es: %04x   fs: %04x   gs: %04x   ss: %04x\n",
+		regs->ds, regs->es, regs->fs, regs->gs, ss);
+    store_TR(i);
+    printk("Pid: %d, process nr: %d (%s)\nStack: ", current->pid, 0xffff & i, current->comm);
+	for(i=0;i<5;i++)
+		printk("%08lx ", get_seg_long(ss,(i+(unsigned long *)esp)));
+	printk("\nCode: ");
+	for(i=0;i<20;i++)
+		printk("%02x ",0xff & get_seg_byte(regs->cs,(i+(char *)regs->eip)));
+	printk("\n");
+	do_exit(SIGSEGV);
 }
 
 DO_ERROR( 0, SIGFPE,  "divide error", divide_error, current)
