@@ -3,6 +3,8 @@
 
 #define BLANK_TIMER	0
 
+#define HD_TIMER	16
+
 struct timer_struct {
 	unsigned long expires;
 	void (*fn)(void);

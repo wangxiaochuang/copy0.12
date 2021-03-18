@@ -242,5 +242,6 @@ asmlinkage void start_kernel(void) {
     memory_start = kmalloc_init(memory_start, memory_end);
     memory_start = chr_dev_init(memory_start, memory_end);
     memory_start = blk_dev_init(memory_start, memory_end);
+    sti();
     for(;;);
 }

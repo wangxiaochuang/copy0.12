@@ -1,6 +1,6 @@
 SUBDIRS = 
 
-OBJS = super.o devices.o
+OBJS = super.o devices.o block_dev.o
 
 all: fs.o
 

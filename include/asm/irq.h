@@ -105,6 +105,7 @@ __asm__( \
 	"incl intr_count\n\t" \
 	"sti\n\t" \
 	"movl %esp, %ebx\n\t" \
+	"pushl %ebx\n\t" \
 	"pushl $" #nr "\n\t" \
 	"call do_IRQ\n\t" \
 	"addl $8, %esp\n\t" \

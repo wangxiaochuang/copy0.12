@@ -13,6 +13,7 @@ static struct request all_requests[NR_REQUEST];
 
 struct wait_queue * wait_for_request = NULL;
 
+// 预读的快数
 int read_ahead[MAX_BLKDEV] = {0, };
 
 struct blk_dev_struct blk_dev[MAX_BLKDEV] = {

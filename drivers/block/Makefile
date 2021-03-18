@@ -1,4 +1,8 @@
-OBJS  = ll_rw_blk.o hd.o
+OBJS  = ll_rw_blk.o genhd.o
+
+ifdef CONFIG_BLK_DEV_HD
+	OBJS := hd.o $(OBJS)
+endif
 
 all: block.a
 

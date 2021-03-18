@@ -26,6 +26,14 @@
 #define READA 2		/* read-ahead - don't pause */
 #define WRITEA 3	/* "write-ahead" - silly, but somewhat useful */
 
+#define MAJOR(a) (int)((unsigned short)(a) >> 8)
+#define MINOR(a) (int)((unsigned short)(a) & 0xFF)
+#define MKDEV(a,b) ((int)((((a) & 0xff) << 8) | ((b) & 0xff)))
+
+#ifndef NULL
+#define NULL ((void *) 0)
+#endif
+
 #define MS_RDONLY    1 /* mount read-only */
 #define MS_NOSUID    2 /* ignore suid and sgid bits */
 #define MS_NODEV     4 /* disallow access to device special files */
@@ -202,6 +210,14 @@ struct inode_operations {
 	int (*permission) (struct inode *, int);
 };
 
+#ifdef __KERNEL__
+
+extern int register_blkdev(unsigned int, const char *, struct file_operations *);
+extern int unregister_blkdev(unsigned int major, const char * name);
+extern int blkdev_open(struct inode * inode, struct file * filp);
+extern struct file_operations def_blk_fops;
+extern struct inode_operations blkdev_inode_operations;
+
 extern int register_chrdev(unsigned int, const char *, struct file_operations *);
 extern int unregister_chrdev(unsigned int major, const char * name);
 extern int chrdev_open(struct inode * inode, struct file * filp);
@@ -209,5 +225,17 @@ extern struct file_operations def_chr_fops;
 extern struct inode_operations chrdev_inode_operations;
 
 extern dev_t ROOT_DEV;
+
+extern int char_read(struct inode *, struct file *, char *, int);
+extern int block_read(struct inode *, struct file *, char *, int);
+extern int read_ahead[];
+
+extern int char_write(struct inode *, struct file *, char *, int);
+extern int block_write(struct inode *, struct file *, char *, int);
+
+extern int block_fsync(struct inode *, struct file *);
+extern int file_fsync(struct inode *, struct file *);
+
+#endif
 
 #endif
