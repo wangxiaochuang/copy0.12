@@ -24,6 +24,7 @@
 #define NORET_AND     noreturn,
 
 extern void math_error(void);
+NORET_TYPE void myprint(const char * fmt, ...);
 NORET_TYPE void mypanic(const char * fmt, ...)
 	__attribute__ ((NORET_AND format (printf, 1, 2)));
 NORET_TYPE void panic(const char * fmt, ...)

@@ -48,6 +48,13 @@ struct tty_queue {
 	unsigned char buf[TTY_BUF_SIZE];
 };
 
+#define IS_A_CONSOLE(min)	(((min) & 0xC0) == 0x00)
+#define IS_A_SERIAL(min)	(((min) & 0xC0) == 0x40)
+#define IS_A_PTY(min)		((min) & 0x80)
+#define IS_A_PTY_MASTER(min)	(((min) & 0xC0) == 0x80)
+#define IS_A_PTY_SLAVE(min)	(((min) & 0xC0) == 0xC0)
+#define PTY_OTHER(min)		((min) ^ 0x40)
+
 struct tty_struct {
 	struct termios *termios;
 	int pgrp;
@@ -112,9 +119,29 @@ struct tty_ldisc {
 
 #define LDISC_FLAG_DEFINED	0x00000001
 
+#define TTY_WRITE_BUSY 0
+#define TTY_READ_BUSY 1
+#define TTY_SQ_THROTTLED 2
+#define TTY_RQ_THROTTLED 3
+#define TTY_IO_ERROR 4
+#define TTY_SLAVE_CLOSED 5
+#define TTY_EXCLUSIVE 6
+
+#define TTY_BREAK	1
+#define TTY_FRAME	2
+#define TTY_PARITY	3
+#define TTY_OVERRUN	4
+
+#define TTY_WRITE_FLUSH(tty) tty_write_flush((tty))
+#define TTY_READ_FLUSH(tty) tty_read_flush((tty))
+
 extern int fg_console;
 extern unsigned long video_num_columns;
 extern unsigned long video_num_lines;
+extern struct wait_queue * keypress_wait;
+
+#define TTY_TABLE_IDX(nr)	((nr) ? (nr) : (fg_console+1))
+#define TTY_TABLE(nr) 		(tty_table[TTY_TABLE_IDX(nr)])
 
 extern long rs_init(long);
 extern long con_init(long);

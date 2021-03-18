@@ -44,16 +44,20 @@
 	"pop %es\n\t" \
 	"iret"
 
+/**
+ * 完全嵌套方式，中断优先级固定，发送普通中断结束（EOI）指令就自动清除当前ISR中优先级最高位置
+ * 因此这里都是写入0x20到0x20端口
+ **/
 #define ACK_FIRST(mask) \
 	"inb $0x21, %al\n\t" \
 	"jmp 1f\n" \
 	"1:\tjmp 1f\n" \
-	"1:\torb $" #mask ",cache_21\n\t" \
+	"1:\torb $" #mask ",cache_21\n\t" /* 屏蔽对应中断 */ \
 	"movb cache_21, %al\n\t" \
 	"outb %al, $0x21\n\t" \
 	"jmp 1f\n" \
 	"1:\tjmp 1f\n" \
-	"1:\tmovb $0x20, %al\n\t" \
+	"1:\tmovb $0x20, %al\n\t" /* 发送EOI指令结束该硬件中断，主芯片端口地址0x20 */ \		
 	"outb %al, $0x20\n\t"
 
 #define ACK_SECOND(mask) \
@@ -66,7 +70,7 @@
 	"jmp 1f\n" \
 	"1:\tjmp 1f\n" \
 	"1:\tmovb $0x20, %al\n\t" \
-	"outb %al, $0xA0\n\t" \
+	"outb %al, $0xA0\n\t" /* 发送EOI指令结束该硬件中断，从芯片端口地址0xA0 */ \
 	"jmp 1f\n" \
 	"1:\tjmp 1f\n" \
 	"1:\toutb %al, $0x20\n\t"
@@ -75,7 +79,7 @@
 	"inb $0x21, %al\n\t" \
 	"jmp 1f\n" \
 	"1:\tjmp 1f\n" \
-	"1:\tandb $~" #mask ", cache_21\n\t" \
+	"1:\tandb $~" #mask ", cache_21\n\t" /* 允许对应中断 */ \
 	"movb cache_21, %al\n\t" \
 	"outb %al, $0x21\n\t"
 
@@ -92,6 +96,10 @@
 #define FAST_IRQ_NAME(nr) IRQ_NAME2(fast_IRQ##nr)
 #define BAD_IRQ_NAME(nr) IRQ_NAME2(bad_IRQ##nr)
 
+/**
+ * 
+ * 
+ **/
 #define BUILD_IRQ(chip, nr, mask) \
 asmlinkage void IRQ_NAME(nr); \
 asmlinkage void FAST_IRQ_NAME(nr); \

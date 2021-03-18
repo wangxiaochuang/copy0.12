@@ -42,6 +42,7 @@ extern int EISA_bus;
 #include <linux/fs.h>
 #include <linux/mm.h>
 #include <linux/signal.h>
+#include <linux/time.h>
 #include <linux/param.h>
 #include <linux/resource.h>
 #include <linux/vm86.h>

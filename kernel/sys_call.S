@@ -91,6 +91,19 @@ lcall7:
     hlt
 
 .align 4
+handle_bottom_half:
+	pushfl
+	incl intr_count
+	sti
+	call do_bottom_half
+	popfl
+	decl intr_count
+	jmp 9f
+.align 4
+reschedule:
+	pushl $ret_from_sys_call
+	jmp schedule
+.align 4
 system_call:
     pushl %eax
     SAVE_ALL
@@ -120,7 +133,34 @@ system_call:
 ret_from_sys_call:
     cmpl $0, intr_count
     jne 2f
-
+	movl bh_mask, %eax
+	andl bh_active, %eax
+	jne handle_bottom_half
+9:
+	movl EFLAGS(%esp), %eax
+	testl $VM_MASK, %eax
+	jne 1f
+	cmpw $KERNEL_CS, CS(%esp)
+	je 2f
+1:
+	sti
+	orl $IF_MASK, %eax
+	andl $~NT_MASK, %eax
+	movl %eax, EFLAGS(%esp)
+	cmpl $0, need_resched
+	jne reschedule
+	movl current, %eax
+	cmpl task, %eax
+	je 2f
+	cmpl $0, state(%eax)
+	jne reschedule
+	cmpl $0, counter(%eax)
+	je reschedule
+	movl blocked(%eax), %ecx
+	movl %ecx, %ebx
+	notl %ecx
+	andl signal(%eax), %ecx
+	jne signal_return
 2:
     RESTORE_ALL
 .align 4

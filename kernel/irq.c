@@ -18,6 +18,28 @@ unsigned long bh_active = 0;
 unsigned long bh_mask = 0xFFFFFFFF;
 struct bh_struct bh_base[32];
 
+asmlinkage void do_bottom_half(void) {
+	unsigned long active;
+	unsigned long mask, left;
+	struct bh_struct *bh;
+	
+	bh = bh_base;
+	active = bh_active & bh_mask;
+	for (mask = 1, left = ~0; left & active; bh++, mask += mask, left += left) {
+		if (mask & active) {
+			void (*fn) (void *);
+			bh_active &= ~mask;
+			fn = bh->routine;
+			if (!fn)
+				goto bad_bh;
+			fn(bh->data);
+		}
+	}
+	return;
+bad_bh:
+	printk ("irq.c:bad bottom half entry\n");
+}
+
 BUILD_IRQ(FIRST,0,0x01)
 BUILD_IRQ(FIRST,1,0x02)
 BUILD_IRQ(FIRST,2,0x04)
@@ -107,6 +129,7 @@ int irqaction(unsigned int irq, struct sigaction *new_sa) {
 	if (sa->sa_flags & SA_INTERRUPT)
 		set_intr_gate(0x20 + irq, fast_interrupt[irq]);
 	else
+		// 时钟中断执行顺序：IRQ0_interrupt -> do_IRQ -> irq_sigaction[irq].handler(do_timer)
 		set_intr_gate(0x20 + irq, interrupt[irq]);
 	if (irq < 8) {
 		cache_21 &= ~(1<<irq);

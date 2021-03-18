@@ -18,6 +18,7 @@
 
 #include <linux/timex.h>
 
+// 一个tick也就是一个时钟中断有多少微秒
 long tick = 1000000 / HZ;               /* timer interrupt period */
 volatile struct timeval xtime;          // the current time
 int tickadj = 500/HZ;                   // microsecs
@@ -361,7 +362,6 @@ static void do_timer(struct pt_regs * regs) {
     struct timer_struct *tp;
 
     long ltemp;
-
     time_phase += time_adj;
     if (time_phase < -FINEUSEC) {
         ltemp = -time_phase >> SHIFT_SCALE;
@@ -372,6 +372,8 @@ static void do_timer(struct pt_regs * regs) {
 		time_phase -= ltemp << SHIFT_SCALE;
 		xtime.tv_usec += tick + time_adjust_step + ltemp;
     } else {
+        // 每一个时钟周期是10000微秒，累计起来
+        // CURRENT_TIME取得是xtime的秒数
         xtime.tv_usec += tick + time_adjust_step;
     }
     if (time_adjust) {
@@ -427,6 +429,7 @@ static void do_timer(struct pt_regs * regs) {
     if (current->it_prof_value && !(--current->it_prof_value)) {
 		current->it_prof_value = current->it_prof_incr;
 		send_sig(SIGPROF,current,1);
+        myprint("need %d", current->stime);
 	}
     for (mask = 1, tp = timer_table + 0; mask; tp++, mask += mask) {
         if (mask > timer_active)
