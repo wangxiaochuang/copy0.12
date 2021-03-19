@@ -39,6 +39,8 @@ extern unsigned long simple_strtoul(const char *,char **,unsigned int);
 #define MAX_INIT_ENVS 8
 #define COMMAND_LINE ((char *) (PARAM+2048))
 
+extern void time_init(void);
+
 static unsigned long memory_start = 0;
 static unsigned long memory_end = 0;
 static unsigned long low_memory_start = 0;
@@ -277,6 +279,8 @@ asmlinkage void start_kernel(void) {
     memory_start = inode_init(memory_start, memory_end);
     memory_start = file_table_init(memory_start, memory_end);
     mem_init(low_memory_start, memory_start,memory_end);
+    buffer_init();
+    time_init();
     for(;;) {
         __asm__("hlt");
     };

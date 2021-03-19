@@ -48,8 +48,8 @@ extern unsigned long file_table_init(unsigned long start, unsigned long end);
 typedef char buffer_block[BLOCK_SIZE];
 
 struct buffer_head {
-	char * b_data;			/* pointer to data block (1024 bytes) */
-	unsigned long b_size;		/* block size */
+	char * b_data;			/* 指向缓存空间 */
+	unsigned long b_size;		/* 缓存大小 */
 	unsigned long b_blocknr;	/* block number */
 	dev_t b_dev;			/* device (0 = free) */
 	unsigned short b_count;		/* users using this block */
@@ -60,7 +60,7 @@ struct buffer_head {
 	struct wait_queue * b_wait;
 	struct buffer_head * b_prev;		/* doubly linked list of hash-queue */
 	struct buffer_head * b_next;
-	struct buffer_head * b_prev_free;	/* doubly linked list of buffers */
+	struct buffer_head * b_prev_free;	/* 上一个空闲的buffer_head */
 	struct buffer_head * b_next_free;
 	struct buffer_head * b_this_page;	/* circular list of buffers in one page */
 	struct buffer_head * b_reqnext;		/* request queue */
@@ -227,6 +227,8 @@ extern int unregister_chrdev(unsigned int major, const char * name);
 extern int chrdev_open(struct inode * inode, struct file * filp);
 extern struct file_operations def_chr_fops;
 extern struct inode_operations chrdev_inode_operations;
+
+extern int shrink_buffers(unsigned int priority);
 
 extern dev_t ROOT_DEV;
 

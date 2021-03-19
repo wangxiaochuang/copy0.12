@@ -32,27 +32,26 @@ ROOT_DEV = CURRENT
 
 SVGA_MODE =	-DSVGA_MODE=NORMAL_VGA
 
-CFLAGS	= -m32 -c -Wall -lasan -ggdb -gstabs+ -nostdinc -Wno-unused-but-set-variable -Wno-unused-variable -fno-pic -fno-builtin -fno-stack-protector
+CFLAGS	= -m32 -c -Wall -lasan -ggdb -gstabs+ -nostdinc -Wno-unused-function -Wno-unused-but-set-variable -Wno-unused-variable -fno-pic -fno-builtin -fno-stack-protector
 
 AS	= as
 LD	= ld
 HOSTCC = gcc
 CC	= gcc -D__KERNEL__
 MAKE = make
-# CPP	= cpp -Iinclude
 CPP	= $(CC) -E
 AR = ar
 STRIP = strip
 LDFLAGS	= -N --oformat binary -nostdlib
 
-ARCHIVES	= kernel/kernel.o fs/fs.o mm/mm.o #net/net.o ipc/ipc.o
+ARCHIVES	= kernel/kernel.o fs/fs.o mm/mm.o ipc/ipc.o #net/net.o
 FILESYSTEMS	= fs/filesystems.a
 DRIVERS = drivers/block/block.a \
 		 drivers/char/char.a \
  		 drivers/net/net.a
 # 		 ibcs/ibcs.o
 LIBS	= lib/lib.a
-SUBDIRS	= kernel fs lib mm drivers #net ipc ibcs
+SUBDIRS	= kernel fs lib mm drivers ipc #net ibcs
 
 # C_INCLUDE_PATH	=/home/ubuntu/myos/copy0.12/include
 C_INCLUDE_PATH	=$(shell pwd)/include
@@ -128,6 +127,9 @@ lib: dummy
 
 mm: dummy
 	$(MAKE) linuxsubdirs SUBDIRS=mm
+
+ipc: dummy
+	$(MAKE) linuxsubdirs SUBDIRS=ipc
 
 kernel: dummy
 	$(MAKE) linuxsubdirs SUBDIRS=kernel

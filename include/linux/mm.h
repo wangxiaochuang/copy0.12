@@ -1,8 +1,8 @@
 #ifndef _LINUX_MM_H
 #define _LINUX_MM_H
 
-#include <linux/page.h>
 #include <linux/sched.h>
+#include <linux/page.h>
 #include <linux/kernel.h>
 
 struct vm_area_struct {
@@ -69,6 +69,8 @@ extern unsigned long paging_init(unsigned long start_mem, unsigned long end_mem)
 extern void mem_init(unsigned long low_start_mem,
 		     unsigned long start_mem, unsigned long end_mem);
 extern void oom(struct task_struct * task);
+
+extern void swap_in(unsigned long *table_ptr);
 
 #define invalidate() \
 __asm__ __volatile__("movl %%cr3,%%eax\n\tmovl %%eax,%%cr3"::)

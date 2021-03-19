@@ -197,6 +197,7 @@ static int normal_select(struct tty_struct * tty, struct inode * inode,
 int tty_write_data(struct tty_struct *tty, char *bufp, int buflen,
 		    void (*callback)(void * data), void * callarg) {
     #define VLEFT ((tail-head-1)&(TTY_BUF_SIZE-1))
+    return 0;
 }
 
 void tty_bh_routine(void * unused) {

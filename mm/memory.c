@@ -28,6 +28,15 @@ void oom(struct task_struct * task) {
 	send_sig(SIGKILL,task,1);
 }
 
+unsigned long put_page(struct task_struct * tsk,unsigned long page,
+	unsigned long address,int prot) {
+    return 0;
+}
+
+unsigned long put_dirty_page(struct task_struct * tsk, unsigned long page, unsigned long address) {
+    return 0;
+}
+
 static void __do_wp_page(unsigned long error_code, unsigned long address,
 	struct task_struct * tsk, unsigned long user_esp) {
     unsigned long *pde, pte, old_page, prot;
@@ -98,15 +107,20 @@ void do_wp_page(unsigned long error_code, unsigned long address,
 
     pg_table = PAGE_DIR_OFFSET(tsk->tss.cr3, address);
     page = *pg_table;
+    // 页目录表中压根不存在
     if (!page)
         return;
     if ((page & PAGE_PRESENT) && page < high_memory) {
+        // address在页表中的地址
         pg_table = (unsigned long *) ((page & PAGE_MASK) + PAGE_PTR(address));
         page = *pg_table;
+        // 要写保护的页面不存在
         if (!(page & PAGE_PRESENT))
             return;
+        // 要写保护的页面本来就可写
         if (page & PAGE_RW)
             return;
+        // 必须有明确的写时复制的标记
         if (!(page & PAGE_COW)) {
             if (user_esp && tsk == current) {
                 current->tss.cr2 = address;
@@ -116,11 +130,13 @@ void do_wp_page(unsigned long error_code, unsigned long address,
                 return;
             }
         }
+        // 直接改为可写状态
         if (mem_map[MAP_NR(page)] == 1) {
             *pg_table |= PAGE_RW | PAGE_DIRTY;
             invalidate();
             return;
         }
+        // 复制一页内存
         __do_wp_page(error_code, address, tsk, user_esp);
         return;
     }
@@ -128,9 +144,114 @@ void do_wp_page(unsigned long error_code, unsigned long address,
 	*pg_table = 0;
 }
 
+static inline void get_empty_page(struct task_struct * tsk, unsigned long address) {
+    unsigned long tmp;
+    if (!(tmp = get_free_page(GFP_KERNEL))) {
+        oom(tsk);
+        tmp = BAD_PAGE;
+    }
+    if (!put_page(tsk, tmp, address, PAGE_PRIVATE))
+        free_page(tmp);
+}
+
+static inline unsigned long get_empty_pgtable(struct task_struct *tsk, unsigned long address) {
+    unsigned long page;
+    unsigned long *p;
+
+    p = PAGE_DIR_OFFSET(tsk->tss.cr3, address);
+    if (PAGE_PRESENT & *p)
+        return *p;
+    // 页目录项如果分配了，其存在位一定为1，否则就是异常的
+    if (*p) {
+        printk("get_empty_pgtable: bad page-directory entry \n");
+        *p = 0;
+    }
+    // 分配页表
+    page = get_free_page(GFP_KERNEL);
+    // 分配过程中可能其页表又存在了，所以二次检测
+    p = PAGE_DIR_OFFSET(tsk->tss.cr3, address);
+    if (PAGE_PRESENT & *p) {
+        free_page(page);
+        return *p;
+    }
+    if (*p) {
+        printk("get_empty_pgtable: bad page-directory entry \n");
+		*p = 0;
+    }
+    if (page) {
+        *p = page | PAGE_TABLE;
+        return *p;
+    }
+    oom(current);
+    *p = BAD_PAGETABLE | PAGE_TABLE;
+    return 0;
+}
+
 void do_no_page(unsigned long error_code, unsigned long address,
 	struct task_struct *tsk, unsigned long user_esp) {
+    unsigned long tmp;
+    unsigned long page;
+    struct vm_area_struct *mpnt;
 
+    page = get_empty_pgtable(tsk, address);
+    if (!page)
+        return;
+    page &= PAGE_MASK;
+    // address在页表中的地址
+    page += PAGE_PTR(address);
+    // address在页表中的条目内容
+    tmp = *(unsigned long *) page;
+    if (tmp & PAGE_PRESENT)
+        return;
+    ++tsk->rss;
+    // 在交换分区中
+    if (tmp) {
+        ++tsk->maj_flt;
+        swap_in((unsigned long *) page);
+        return;
+    }
+    // 物理页不存在
+    address &= 0xfffff000;
+    tmp = 0;
+    for (mpnt = tsk->mmap; mpnt != NULL; mpnt = mpnt->vm_next) {
+        if (address < mpnt->vm_start)
+            break;
+        if (address >= mpnt->vm_end) {
+            tmp = mpnt->vm_end;
+            continue;
+        }
+        // address在某个已分配的虚拟地址区域中
+        if (!mpnt->vm_ops || !mpnt->vm_ops->nopage) {
+            ++tsk->min_flt;
+            get_empty_page(tsk, address);
+            return;
+        }
+        mpnt->vm_ops->nopage(error_code, mpnt, address);
+        return;
+    }
+    if (tsk != current)
+        goto ok_no_page;
+    // 堆的地址空间
+    if (address >= tsk->end_data && address < tsk->brk)
+        goto ok_no_page;
+    // 如果是在用户栈区域
+    // 确保栈延长的长度足够
+    // 确保增长后的栈长度小于其限额
+    if (mpnt && mpnt == tsk->stk_vma &&
+        address - tmp > mpnt->vm_start - address &&
+        tsk->rlim[RLIMIT_STACK].rlim_cur > mpnt->vm_end - address) {
+        mpnt->vm_start = address;
+        goto ok_no_page;
+    }
+    tsk->tss.cr2 = address;
+    current->tss.error_code = error_code;
+    current->tss.trap_no = 14;
+    send_sig(SIGSEGV, tsk, 1);
+    if (error_code & 4)
+        return;
+ok_no_page:
+    ++tsk->min_flt;
+    get_empty_page(tsk, address);
 }
 
 asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long error_code) {
@@ -157,6 +278,7 @@ asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long error_code) {
             do_no_page(error_code, address, current, user_esp);
         return;
     }
+    // 内核态的地址
     address -= TASK_SIZE;
     if (wp_works_ok < 0 && address == 0 && (error_code & PAGE_PRESENT)) {
         wp_works_ok = 1;
@@ -247,7 +369,7 @@ void mem_init(unsigned long start_low_mem, unsigned long start_mem, unsigned lon
     // 全部先初始化为保留
     while (p > mem_map)
         *--p = MAP_PAGE_RESERVED;
-    // start_low_mem 0xa0000 mem_map start_mem end_mem
+    // start_low_mem 0xa0000 reserve mem_map start_mem end_mem
     start_low_mem = PAGE_ALIGN(start_low_mem);
     start_mem = PAGE_ALIGN(start_mem);
     while (start_low_mem < 0xA0000) {
