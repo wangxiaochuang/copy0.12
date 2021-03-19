@@ -48,8 +48,8 @@ LDFLAGS	= -N --oformat binary -nostdlib
 ARCHIVES	= kernel/kernel.o fs/fs.o mm/mm.o #net/net.o ipc/ipc.o
 FILESYSTEMS	= fs/filesystems.a
 DRIVERS = drivers/block/block.a \
-		 drivers/char/char.a
-# 		 drivers/net/net.a \
+		 drivers/char/char.a \
+ 		 drivers/net/net.a
 # 		 ibcs/ibcs.o
 LIBS	= lib/lib.a
 SUBDIRS	= kernel fs lib mm drivers #net ipc ibcs

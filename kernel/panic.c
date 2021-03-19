@@ -18,7 +18,7 @@ NORET_TYPE void panic(const char * fmt, ...) {
 
 static void raw_print(const char * b) {
 	unsigned char c;
-	unsigned char *video = (unsigned char *) 0xb8000;
+	unsigned char *video = (unsigned char *) 0xb8000 + 24*160;
 	while ((c = *(b++)) != 0) {
 		video[0] = c;
 		video[1] = 0x07;

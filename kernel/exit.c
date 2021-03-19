@@ -48,5 +48,5 @@ int send_sig(unsigned long sig, struct task_struct * p, int priv) {
 }
 
 NORET_TYPE void do_exit(long code) {
-	mypanic("i am here, panic");
+	mypanic("i am here in do_exit, panic");
 }

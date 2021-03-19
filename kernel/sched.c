@@ -43,6 +43,7 @@ int need_resched = 0;
 int hard_math = 0;
 int x86 = 0;
 int ignore_irq13 = 0;
+int wp_works_ok = 0;
 
 int EISA_bus = 0;
 

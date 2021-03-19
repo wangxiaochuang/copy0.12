@@ -1,4 +1,4 @@
-OBJS = memory.o kmalloc.o
+OBJS = memory.o kmalloc.o swap.o
 
 mm.o: $(OBJS)
 	$(LD) -r -o mm.o $(OBJS)

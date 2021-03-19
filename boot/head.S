@@ -9,7 +9,7 @@
 #define CL_OFFSET	0x90022
 
 .globl idt, gdt
-.globl swapper_pg_dir
+.globl swapper_pg_dir, pg0
 .globl empty_zero_page
 .globl startup_32
 startup_32:

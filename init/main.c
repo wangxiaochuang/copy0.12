@@ -1,11 +1,13 @@
 #include <asm/system.h>
 
+#include <linux/config.h>
 #include <linux/sched.h>
 #include <linux/tty.h>
 #include <linux/head.h>
 #include <linux/string.h>
 #include <linux/fs.h>
 #include <linux/ctype.h>
+#include <linux/delay.h>
 #include <linux/ioport.h>
 
 extern char edata, end;
@@ -21,6 +23,7 @@ extern void init_IRQ(void);
 extern long kmalloc_init (long,long);
 extern long blk_dev_init(long,long);
 extern long chr_dev_init(long,long);
+unsigned long net_dev_init(unsigned long, unsigned long);
 extern unsigned long simple_strtoul(const char *,char **,unsigned int);
 
 #define PARAM	empty_zero_page
@@ -133,6 +136,30 @@ int checksetup(char *line) {
     return 0;
 }
 
+unsigned long loops_per_sec = 1;
+
+static void calibrate_delay(void) {
+    int ticks;
+    printk("Calibrating delay loop.. ");
+    while (loops_per_sec <<= 1) {
+        ticks = jiffies;
+        __delay(loops_per_sec);
+        ticks = jiffies - ticks;
+        if (ticks >= HZ) {
+            __asm__("mull %1 ; divl %2"
+				:"=a" (loops_per_sec)
+				:"d" (HZ),
+				 "r" (ticks),
+				 "0" (loops_per_sec));
+			printk("ok - %lu.%02lu BogoMips\n",
+				loops_per_sec/500000,
+				(loops_per_sec/5000) % 100);
+			return;
+        }
+    }
+    printk("failed\n");
+}
+
 static void parse_options(char *line) {
     char *next;
 	char *devnames[] = { "hda", "hdb", "sda", "sdb", "sdc", "sdd", "sde", "fd", "xda", "xdb", NULL };
@@ -243,5 +270,14 @@ asmlinkage void start_kernel(void) {
     memory_start = chr_dev_init(memory_start, memory_end);
     memory_start = blk_dev_init(memory_start, memory_end);
     sti();
-    for(;;);
+    calibrate_delay();
+#ifdef CONFIG_INET
+    memory_start = net_dev_init(memory_start, memory_end);
+#endif
+    memory_start = inode_init(memory_start, memory_end);
+    memory_start = file_table_init(memory_start, memory_end);
+    mem_init(low_memory_start, memory_start,memory_end);
+    for(;;) {
+        __asm__("hlt");
+    };
 }

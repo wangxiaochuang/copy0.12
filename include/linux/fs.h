@@ -26,6 +26,10 @@
 #define READA 2		/* read-ahead - don't pause */
 #define WRITEA 3	/* "write-ahead" - silly, but somewhat useful */
 
+extern void buffer_init(void);
+extern unsigned long inode_init(unsigned long start, unsigned long end);
+extern unsigned long file_table_init(unsigned long start, unsigned long end);
+
 #define MAJOR(a) (int)((unsigned short)(a) >> 8)
 #define MINOR(a) (int)((unsigned short)(a) & 0xFF)
 #define MKDEV(a,b) ((int)((((a) & 0xff) << 8) | ((b) & 0xff)))

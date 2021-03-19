@@ -10,6 +10,7 @@
 extern int hard_math;
 extern int x86;
 extern int ignore_irq13;
+extern int wp_works_ok;
 
 extern int EISA_bus;
 
