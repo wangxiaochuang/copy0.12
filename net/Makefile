@@ -1,14 +1,13 @@
-OBJS = util.o
+OBJS = socket.o
 
-ifdef CONFIG_SYSVIPC
-OBJS := $(OBJS) msg.o sem.o shm.o
-endif
+all: net.o
 
-ipc.o: $(OBJS)
-	$(LD) -r -o ipc.o $(OBJS)
+net.o: $(OBJS)
+	$(LD) -r -o net.o $(OBJS)
 
 dep:
 	$(CPP) -M *.c > .depend
+	# set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i dep; done
 
 dummy:
 
@@ -18,3 +17,4 @@ dummy:
 ifeq (.depend,$(wildcard .depend))
 include .depend
 endif
+	

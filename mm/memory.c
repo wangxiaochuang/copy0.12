@@ -1,5 +1,13 @@
+#include <asm/system.h>
+#include <linux/config.h>
+
+#include <linux/signal.h>
 #include <linux/sched.h>
 #include <linux/head.h>
+#include <linux/kernel.h>
+#include <linux/errno.h>
+#include <linux/string.h>
+#include <linux/types.h>
 #include <linux/ptrace.h>
 
 unsigned long high_memory = 0;
@@ -28,12 +36,164 @@ void oom(struct task_struct * task) {
 	send_sig(SIGKILL,task,1);
 }
 
-unsigned long put_page(struct task_struct * tsk,unsigned long page,
-	unsigned long address,int prot) {
+static void free_one_table(unsigned long * page_dir) {
+    int j;
+	unsigned long pg_table = *page_dir;
+	unsigned long * page_table;
+
+	if (!pg_table)
+		return;
+	*page_dir = 0;
+    if (pg_table >= high_memory || !(pg_table & PAGE_PRESENT)) {
+		printk("Bad page table: [%p]=%08lx\n", page_dir, pg_table);
+		return;
+	}
+    if (mem_map[MAP_NR(pg_table)] & MAP_PAGE_RESERVED)
+        return;
+    page_table = (unsigned long *) (pg_table & PAGE_MASK);
+    for (j = 0; j < PTRS_PER_PAGE; j++, page_table++) {
+        unsigned long pg = *page_table;
+        if (!pg)
+            continue;
+        *page_table = 0;
+        if (pg & PAGE_PRESENT)
+            free_page(PAGE_MASK & pg);
+        else
+            swap_free(pg);
+    }
+}
+
+void free_page_tables(struct task_struct * tsk) {
+    int i;
+	unsigned long pg_dir;
+	unsigned long * page_dir;
+
+    if (!tsk)
+        return;
+    if (tsk == task[0]) {
+		printk("task[0] (swapper) killed: unable to recover\n");
+		panic("Trying to free up swapper memory space");
+	}
+	pg_dir = tsk->tss.cr3;
+    if (!pg_dir || pg_dir == (unsigned long) swapper_pg_dir) {
+        printk("Trying to free kernel page-directory: not good\n");
+		return;
+    }
+    tsk->tss.cr3 = (unsigned long) swapper_pg_dir;
+    if (tsk == current)
+        __asm__ __volatile__("movl %0,%%cr3": :"a" (tsk->tss.cr3));
+    if (mem_map[MAP_NR(pg_dir)] > 1) {
+        free_page(pg_dir);
+        return;
+    }
+    page_dir = (unsigned long *) pg_dir;
+    for (i = 0; i < PTRS_PER_PAGE; i++, page_dir++)
+        free_one_table(page_dir);
+    free_page(pg_dir);
+    invalidate();
+}
+
+int clone_page_tables(struct task_struct * tsk) {
+    unsigned long pg_dir;
+
+    pg_dir = current->tss.cr3;
+    mem_map[MAP_NR(pg_dir)]++;
+    tsk->tss.cr3 = pg_dir;
     return 0;
 }
 
+int copy_page_tables(struct task_struct * tsk) {
+    int i;
+	unsigned long old_pg_dir, *old_page_dir;
+	unsigned long new_pg_dir, *new_page_dir;
+
+    if (!(new_pg_dir = get_free_page(GFP_KERNEL)))
+        return -ENOMEM;
+    old_pg_dir = current->tss.cr3;
+    tsk->tss.cr3 = new_pg_dir;
+    old_page_dir = (unsigned long *) old_pg_dir;
+    new_page_dir = (unsigned long *) new_pg_dir;
+    for (i = 0; i < PTRS_PER_PAGE; i++, old_page_dir++, new_page_dir++) {
+        int j;
+        unsigned long old_pg_table, *old_page_table;
+        unsigned long new_pg_table, *new_page_table;
+
+        old_pg_table = *old_page_dir;
+        if (!old_pg_table)
+            continue;
+        if (old_pg_table >= high_memory || !(old_pg_table & PAGE_PRESENT)) {
+            printk("copy_page_tables: bad page table: "
+				"probable memory corruption");
+            *old_page_dir = 0;
+            continue;
+        }
+        if (mem_map[MAP_NR(old_pg_table)] & MAP_PAGE_RESERVED) {
+            *new_page_dir = old_pg_table;
+            continue;
+        }
+        if (!(new_pg_table = get_free_page(GFP_KERNEL))) {
+            free_page_tables(tsk);
+            return -ENOMEM;
+        }
+        old_page_table = (unsigned long *) (PAGE_MASK & old_pg_table);
+        new_page_table = (unsigned long *) (PAGE_MASK & new_pg_table);
+        for (j = 0; j < PTRS_PER_PAGE; j++, old_page_table++, new_page_table++) {
+            unsigned long pg;
+            pg = *old_page_table;
+            if (!pg)
+                continue;
+            if (!(pg & PAGE_PRESENT)) {
+                *new_page_table = swap_duplicate(pg);
+                continue;
+            }
+            if ((pg & (PAGE_RW | PAGE_COW)) == (PAGE_RW | PAGE_COW))
+                pg &= ~PAGE_RW;
+            *new_page_table = pg;
+            if (mem_map[MAP_NR(pg)] & MAP_PAGE_RESERVED)
+                continue;
+            *old_page_table = pg;
+            mem_map[MAP_NR(pg)]++;
+        }
+        *new_page_dir = new_pg_table | PAGE_TABLE;
+    }
+    invalidate();
+    return 0;
+}
+
+unsigned long put_page(struct task_struct * tsk,unsigned long page,
+	unsigned long address,int prot) {
+    unsigned long *page_table;
+
+    if ((prot & (PAGE_MASK | PAGE_PRESENT)) != PAGE_PRESENT)
+        printk("put_page: prot = %08x\n", prot);
+    if (page >= high_memory) {
+        printk("put_page: trying to put page %08lx at %08lx\n",page,address);
+		return 0;
+    }
+    page_table = PAGE_DIR_OFFSET(tsk->tss.cr3, address);
+    if ((*page_table) & PAGE_PRESENT)
+        page_table = (unsigned long *) (PAGE_MASK & *page_table);
+    else {
+        printk("put_page: bad page directory entry\n");
+        oom(tsk);
+        *page_table = BAD_PAGETABLE | PAGE_TABLE;
+        return 0;
+    }
+    page_table += (address >> PAGE_SHIFT) & (PTRS_PER_PAGE - 1);
+    if (*page_table) {
+        printk("put_page: page already exists\n");
+        *page_table = 0;
+        invalidate();
+    }
+    *page_table = page | prot;
+    return page;
+}
+
 unsigned long put_dirty_page(struct task_struct * tsk, unsigned long page, unsigned long address) {
+    unsigned long tmp, *page_table;
+
+    if (page >= high_memory)
+        printk("put_dirty_page: trying to put page %08lx at %08lx\n", page, address);
     return 0;
 }
 
@@ -298,15 +458,33 @@ asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long error_code) {
 }
 
 unsigned long __bad_pagetable(void) {
-    return 0;
+    extern char empty_bad_page_table[PAGE_SIZE];
+
+    __asm__ __volatile__("cld; rep; stosl":
+        :"a" (BAD_PAGE + PAGE_TABLE),
+        "D" ((long) empty_bad_page_table),
+        "c" (PTRS_PER_PAGE));
+    return (unsigned long) empty_bad_page_table;
 }
 
 unsigned long __bad_page(void) {
-    return 0;
+    extern char empty_bad_page[PAGE_SIZE];
+
+    __asm__ __volatile__("cld; rep; stosl":
+        :"a" (0),
+        "D" ((long) empty_bad_page),
+        "c" (PTRS_PER_PAGE));
+    return (unsigned long) empty_bad_page;
 }
 
 unsigned long __zero_page(void) {
-    return 0;
+    extern char empty_zero_page[PAGE_SIZE];
+
+    __asm__ __volatile__("cld; rep; stosl":
+        :"a" (0),
+        "D" ((long) empty_zero_page),
+        "c" (PTRS_PER_PAGE));
+    return (unsigned long) empty_zero_page;
 }
 
 /**

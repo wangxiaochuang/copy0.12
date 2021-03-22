@@ -24,6 +24,37 @@ int buffermem = 0;
 int nr_buffer_heads = 0;
 static int min_free_pages = 20;
 
+void __wait_on_buffer(struct buffer_head * bh) {
+
+}
+
+#define BADNESS(bh) (((bh)->b_dirt<<1)+(bh)->b_lock)
+struct buffer_head * getblk(dev_t dev, int block, int size) {
+    return NULL;
+}
+
+void brelse(struct buffer_head * buf) {
+    
+}
+
+struct buffer_head * bread(dev_t dev, int block, int size) {
+    struct buffer_head *bh;
+
+    if (!(bh = getblk(dev, block, size))) {
+        printk("VFS: bread: READ error on device %d/%d\n",
+						MAJOR(dev), MINOR(dev));
+		return NULL;
+    }
+    if (bh->b_uptodate)
+        return bh;
+    ll_rw_block(READ, 1, &bh);
+    wait_on_buffer(bh);
+    if (bh->b_uptodate)
+        return bh;
+    brelse(bh);
+    return NULL;
+}
+
 static void put_unused_buffer_head(struct buffer_head * bh) {
 
 }

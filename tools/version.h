@@ -1,0 +1,6 @@
+#define UTS_RELEASE "1.0"
+#define UTS_VERSION "#19 Mon Mar 22 09:10:19 CST 2021"
+#define LINUX_COMPILE_TIME "09:10:19"
+#define LINUX_COMPILE_BY "ubuntu"
+#define LINUX_COMPILE_HOST "ubuntu"
+#define LINUX_COMPILE_DOMAIN "(none)"

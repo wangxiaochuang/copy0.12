@@ -1,30 +1,50 @@
+#include <stdarg.h>
+
 #include <asm/system.h>
+#include <asm/io.h>
 
 #include <linux/config.h>
 #include <linux/sched.h>
 #include <linux/tty.h>
 #include <linux/head.h>
+#include <linux/unistd.h>
 #include <linux/string.h>
+#include <linux/timer.h>
 #include <linux/fs.h>
 #include <linux/ctype.h>
 #include <linux/delay.h>
+#include <linux/utsname.h>
 #include <linux/ioport.h>
 
 extern char edata, end;
+extern char *linux_banner;
 asmlinkage void lcall7(void);
 struct desc_struct default_ldt;
+
+#define __NR__exit __NR_exit
+static inline _syscall0(int, idle)
+static inline _syscall0(int, fork)
+static inline _syscall1(int, setup, void *, BIOS)
 
 static char printbuf[1024];
 
 extern int console_loglevel;
 
 extern char empty_zero_page[PAGE_SIZE];
+extern int vsprintf(char *,const char *,va_list);
+extern void init(void);
 extern void init_IRQ(void);
 extern long kmalloc_init (long,long);
 extern long blk_dev_init(long,long);
 extern long chr_dev_init(long,long);
+extern void floppy_init(void);
+extern void sock_init(void);
 unsigned long net_dev_init(unsigned long, unsigned long);
 extern unsigned long simple_strtoul(const char *,char **,unsigned int);
+
+#ifdef CONFIG_SYSVIPC
+extern void ipc_init(void);
+#endif
 
 #define PARAM	empty_zero_page
 #define EXT_MEM_K (*(unsigned short *) (PARAM+2))
@@ -63,6 +83,8 @@ struct screen_info screen_info;
 unsigned char aux_device_present;
 int ramdisk_size;
 int root_mountflags = 0;
+
+static char fpu_error = 0;
 
 static char command_line[80] = { 0, };
 
@@ -230,6 +252,16 @@ static void copy_options(char * to, char * from) {
     } while (c);
 }
 
+static void copro_timeout(void) {
+    fpu_error = 1;
+    timer_table[COPRO_TIMER].expires = jiffies + 100;
+    timer_active |= 1 << COPRO_TIMER;
+    printk("387 failed: trying to reset\n");
+	send_sig(SIGFPE, last_task_used_math, 1);
+	outb_p(0,0xf1);
+	outb_p(0,0xf0);
+}
+
 asmlinkage void start_kernel(void) {
     set_call_gate(&default_ldt, lcall7);
     ROOT_DEV = ORIG_ROOT_DEV;
@@ -281,7 +313,51 @@ asmlinkage void start_kernel(void) {
     mem_init(low_memory_start, memory_start,memory_end);
     buffer_init();
     time_init();
+    floppy_init();
+    sock_init();
+#ifdef CONFIG_SYSVIPC
+	ipc_init();
+#endif
+    sti();
+    // there is no 387
+    if (!hard_math) {
+		unsigned short control_word;
+
+		printk("Checking 386/387 coupling... ");
+		timer_table[COPRO_TIMER].expires = jiffies+50;
+		timer_table[COPRO_TIMER].fn = copro_timeout;
+		timer_active |= 1<<COPRO_TIMER;
+		__asm__("clts ; fninit ; fnstcw %0 ; fwait":"=m" (*&control_word));
+		control_word &= 0xffc0;
+		__asm__("fldcw %0 ; fwait": :"m" (*&control_word));
+		outb_p(inb_p(0x21) | (1 << 2), 0x21);
+		__asm__("fldz ; fld1 ; fdiv %st,%st(1) ; fwait");
+		timer_active &= ~(1<<COPRO_TIMER);
+		if (!fpu_error)
+			printk("Ok, fpu using %s error reporting.\n",
+				ignore_irq13?"exception 16":"irq13");
+	}
+#ifndef CONFIG_MATH_EMULATION
+	else {
+		printk("No coprocessor found and no math emulation present.\n");
+		printk("Giving up.\n");
+		for (;;) ;
+	}
+#endif
+    system_utsname.machine[1] = '0' + x86;
+    printk("%s", linux_banner);
+
+    move_to_user_mode();
+    if (!fork()) {
+        init();
+    }
     for(;;) {
-        __asm__("hlt");
+        idle();
     };
+}
+
+void init(void) {
+    int pid, i;
+    setup((void *) &drive_info);
+    for(;;);
 }

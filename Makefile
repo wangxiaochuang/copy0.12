@@ -44,16 +44,15 @@ AR = ar
 STRIP = strip
 LDFLAGS	= -N --oformat binary -nostdlib
 
-ARCHIVES	= kernel/kernel.o fs/fs.o mm/mm.o ipc/ipc.o #net/net.o
+ARCHIVES	= kernel/kernel.o fs/fs.o mm/mm.o ipc/ipc.o net/net.o
 FILESYSTEMS	= fs/filesystems.a
 DRIVERS = drivers/block/block.a \
 		 drivers/char/char.a \
  		 drivers/net/net.a
 # 		 ibcs/ibcs.o
 LIBS	= lib/lib.a
-SUBDIRS	= kernel fs lib mm drivers ipc #net ibcs
+SUBDIRS	= kernel fs lib mm drivers ipc net #ibcs
 
-# C_INCLUDE_PATH	=/home/ubuntu/myos/copy0.12/include
 C_INCLUDE_PATH	=$(shell pwd)/include
 
 ifdef CONFIG_SCSI
@@ -89,7 +88,7 @@ linuxsubdirs: dummy
 tools/./version.h: tools/version.h
 
 tools/version.h: $(CONFIGURE) Makefile
-	@./makever.sh
+	@sh makever.sh
 	@echo \#define UTS_RELEASE \"$(VERSION).$(PATCHLEVEL)$(ALPHA)\" > tools/version.h
 	@echo \#define UTS_VERSION \"\#`cat .version` `date`\" >> tools/version.h
 	@echo \#define LINUX_COMPILE_TIME \"`date +%T`\" >> tools/version.h
@@ -97,12 +96,14 @@ tools/version.h: $(CONFIGURE) Makefile
 	@echo \#define LINUX_COMPILE_HOST \"`hostname`\" >> tools/version.h
 	@echo \#define LINUX_COMPILE_DOMAIN \"`domainname`\" >> tools/version.h
 
+tools/version.o: tools/version.c tools/version.h
+
 boot/bootsect: boot/bootsect.S include/linux/config.h
 	$(CC) -I include -c -o boot/bootsect.o boot/bootsect.S
 	$(LD) $(LDFLAGS) -Ttext 0x0 -e 0 -o boot/bootsect boot/bootsect.o
 
-tools/system: boot/head.o init/main.o linuxsubdirs
-	$(LD) $(LDFLAGS) -Ttext 0x1000 -e startup_32 boot/head.o init/main.o \
+tools/system: boot/head.o init/main.o tools/version.o linuxsubdirs
+	$(LD) $(LDFLAGS) -Ttext 0x1000 -e startup_32 boot/head.o init/main.o tools/version.o \
 	$(ARCHIVES) \
 	$(DRIVERS) \
 	$(LIBS) \
@@ -136,6 +137,9 @@ kernel: dummy
 
 drivers: dummy
 	$(MAKE) linuxsubdirs SUBDIRS=drivers
+
+net: dummy
+	$(MAKE) linuxsubdirs SUBDIRS=net
 
 bochs:
 	@bochs -qf debug/bochs.cnf

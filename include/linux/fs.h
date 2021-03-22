@@ -230,6 +230,8 @@ extern struct inode_operations chrdev_inode_operations;
 
 extern int shrink_buffers(unsigned int priority);
 
+extern void ll_rw_block(int rw, int nr, struct buffer_head * bh[]);
+extern struct buffer_head * bread(dev_t dev, int block, int size);
 extern dev_t ROOT_DEV;
 
 extern int char_read(struct inode *, struct file *, char *, int);

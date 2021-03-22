@@ -79,7 +79,20 @@ int sys_ni_syscall(void) {
 	return -EINVAL;
 }
 
-fn_ptr sys_call_table[] = {0};
+fn_ptr sys_call_table[] = { sys_setup, sys_ni_syscall, sys_fork, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,
+    sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,
+    sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,
+    sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,
+    sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,
+    sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,
+    sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,
+    sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,
+    sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,
+    sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,
+    sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,
+    sys_ni_syscall, sys_ni_syscall, sys_idle
+};
+
 int NR_syscalls = sizeof(sys_call_table)/sizeof(fn_ptr);
 
 #ifdef __cplusplus
@@ -151,6 +164,8 @@ confuse_gcc1:
     for (;;) {
         if ((p = p->next_task) == &init_task)
             goto confuse_gcc2;
+        if (p->state == TASK_RUNNING && p->counter > c)
+            c = p->counter, next = p;
     } 
 confuse_gcc2:
     if (!c) {
@@ -159,6 +174,7 @@ confuse_gcc2:
     }
     if (current != next)
         kstat.context_swtch++;
+    
     switch_to(next);
     if (current->debugreg[7]) {
         loaddebug(0);

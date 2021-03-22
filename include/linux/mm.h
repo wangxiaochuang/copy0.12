@@ -58,7 +58,13 @@ static inline unsigned long get_free_page(int priority) {
 	return page;
 }
 
+/* memory.c */
+
 extern void free_page(unsigned long addr);
+extern void free_page_tables(struct task_struct * tsk);
+extern void clear_page_tables(struct task_struct * tsk);
+extern int copy_page_tables(struct task_struct * to);
+extern int clone_page_tables(struct task_struct * to);
 
 extern void do_wp_page(unsigned long error_code, unsigned long address,
 	struct task_struct *tsk, unsigned long user_esp);
@@ -70,6 +76,16 @@ extern void mem_init(unsigned long low_start_mem,
 		     unsigned long start_mem, unsigned long end_mem);
 extern void oom(struct task_struct * task);
 
+/* vmalloc.c */
+
+extern void * vmalloc(unsigned long size);
+extern void vfree(void * addr);
+extern int vread(char *buf, char *addr, int count);
+
+/* swap.c */
+
+extern void swap_free(unsigned long page_nr);
+extern unsigned long swap_duplicate(unsigned long page_nr);
 extern void swap_in(unsigned long *table_ptr);
 
 #define invalidate() \

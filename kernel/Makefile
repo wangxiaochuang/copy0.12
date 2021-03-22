@@ -1,5 +1,5 @@
 OBJS = sched.o sys_call.o traps.o printk.o vsprintf.o exit.o irq.o signal.o sys.o panic.o ioport.o \
-	time.o
+	time.o mktime.o dma.o fork.o
 
 all: kernel.o
 

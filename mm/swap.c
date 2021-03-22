@@ -16,8 +16,21 @@ extern int shm_swap (int);
 #define NR_LAST_FREE_PAGES 32
 static unsigned long last_free_pages[NR_LAST_FREE_PAGES] = {0,};
 
+unsigned long swap_duplicate(unsigned long entry) {
+    return 0;
+}
+
+void swap_free(unsigned long entry) {
+    
+}
+
 void swap_in(unsigned long *table_ptr) {
     
+}
+
+asmlinkage int sys_idle(void) {
+	need_resched = 1;
+	return 0;
 }
 
 static int swap_out(unsigned int priority) {
@@ -73,7 +86,6 @@ void free_page(unsigned long addr) {
 
 /**
  * free_page_list是4k对齐的
- * 
  **/
 #define REMOVE_FROM_MEM_QUEUE(queue,nr) \
     cli(); \
@@ -104,7 +116,7 @@ unsigned long __get_free_page(int priority) {
     unsigned long result, flag;
     static unsigned long index = 0;
 
-    // 中断期间，标志需要是GFP_ATOMIC
+    // 硬件中断期间，标志需要是GFP_ATOMIC
     if (intr_count && priority != GFP_ATOMIC) {
         printk("gfp called nonatomically from interrupt %08lx\n",
 			((unsigned long *)&priority)[-1]);

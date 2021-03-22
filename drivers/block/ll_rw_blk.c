@@ -35,6 +35,10 @@ int * blksize_size[MAX_BLKDEV] = { NULL, NULL, };
 
 static long ro_bits[MAX_BLKDEV][8];
 
+void ll_rw_block(int rw, int nr, struct buffer_head * bh[]) {
+	
+}
+
 long blk_dev_init(long mem_start, long mem_end) {
     struct request *req;
 

@@ -4,6 +4,8 @@
 #define BLANK_TIMER	0
 
 #define HD_TIMER	16
+#define FLOPPY_TIMER	17
+#define COPRO_TIMER	21
 
 struct timer_struct {
 	unsigned long expires;

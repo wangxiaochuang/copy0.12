@@ -1,4 +1,4 @@
-OBJS  = ctype.o
+OBJS  = ctype.o errno.o
 
 lib.a: $(OBJS)
 	$(AR) rcs lib.a $(OBJS)

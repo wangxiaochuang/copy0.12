@@ -1,4 +1,4 @@
-OBJS  = ll_rw_blk.o genhd.o
+OBJS  = ll_rw_blk.o genhd.o floppy.o
 
 ifdef CONFIG_BLK_DEV_HD
 	OBJS := hd.o $(OBJS)

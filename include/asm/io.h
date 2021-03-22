@@ -63,9 +63,9 @@ __asm__ __volatile__ ("in" #s " %" s2 "1,%" s1 "0"
 
 #define __IN(s,s1,i...) \
 __IN1(s) __IN2(s,s1,"w") : "=a" (_v) : "d" (port) ,##i ); return _v; } \
-__IN1(s##c) __IN2(s,s1,"") : "=a" (_v) : "i" (port) ,##i ); return _v; } \
+__IN1(s##c) __IN2(s,s1,"") : "=a" (_v) : "d" (port) ,##i ); return _v; } \
 __IN1(s##_p) __IN2(s,s1,"w") : "=a" (_v) : "d" (port) ,##i ); SLOW_DOWN_IO; return _v; } \
-__IN1(s##c_p) __IN2(s,s1,"") : "=a" (_v) : "i" (port) ,##i ); SLOW_DOWN_IO; return _v; }
+__IN1(s##c_p) __IN2(s,s1,"") : "=a" (_v) : "d" (port) ,##i ); SLOW_DOWN_IO; return _v; }
 
 #define __INS(s) \
 static inline void ins##s(unsigned short port, void * addr, unsigned long count) \

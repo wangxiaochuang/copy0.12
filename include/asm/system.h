@@ -3,6 +3,21 @@
 
 #include <linux/segment.h>
 
+#define move_to_user_mode() \
+__asm__ __volatile__ ("movl %%esp, %%eax\n\t" \
+	"pushl %0\n\t" \
+	"pushl %%eax\n\t" \
+	"pushfl\n\t" \
+	"pushl %1\n\t"\
+	"pushl $1f\n\t" \
+	"iret\n" \
+	"1:\tmovl %0, %%eax\n\t" \
+	"mov %%ax, %%ds\n\t" \
+	"mov %%ax, %%es\n\t" \
+	"mov %%ax, %%fs\n\t" \
+	"mov %%ax, %%gs" \
+	::"i" (USER_DS), "i" (USER_CS))
+
 #define sti() __asm__ __volatile__ ("sti": : :"memory")
 #define cli() __asm__ __volatile__ ("cli": : :"memory")
 #define nop() __asm__ __volatile__ ("nop")
