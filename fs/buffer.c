@@ -25,7 +25,19 @@ int nr_buffer_heads = 0;
 static int min_free_pages = 20;
 
 void __wait_on_buffer(struct buffer_head * bh) {
+    struct wait_queue wait = { current, NULL };
 
+    bh->b_count++;
+    add_wait_queue(&bh->b_wait, &wait);
+repeat:
+    current->state = TASK_UNINTERRUPTIBLE;
+    if (bh->b_lock) {
+        schedule();
+        goto repeat;
+    }
+    remove_wait_queue(&bh->b_wait, &wait);
+    bh->b_count--;
+    current->state = TASK_RUNNING;
 }
 
 static int sync_buffers(dev_t dev, int wait) {

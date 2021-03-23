@@ -38,7 +38,7 @@ static inline struct request * get_request(int n, int dev) {
 	static struct request *prev_found = NULL, *prev_limit = NULL;
 	register struct request *req, *limit;
 
-	if (nr <= 0)
+	if (n <= 0)
 		panic("get_request(%d): impossible!\n", n);
 	limit = all_requests + n;
 	if (limit != prev_limit) {
@@ -76,7 +76,7 @@ void set_device_ro(int dev, int flag) {
 	minor = MINOR(dev);
 	if (major < 0 || major >= MAX_BLKDEV) return;
 	if (flag) ro_bits[major][minor >> 5] |= 1 << (minor & 31);
-	else ro_bits[major][minor >> 5] &= ~(1 << (minor & 31))
+	else ro_bits[major][minor >> 5] &= ~(1 << (minor & 31));
 }
 
 static void add_request(struct blk_dev_struct * dev, struct request * req) {

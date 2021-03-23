@@ -214,6 +214,23 @@ struct inode_operations {
 	int (*permission) (struct inode *, int);
 };
 
+struct super_operations {
+	void (*read_inode) (struct inode *);
+	int (*notify_change) (int flags, struct inode *);
+	void (*write_inode) (struct inode *);
+	void (*put_inode) (struct inode *);
+	void (*put_super) (struct super_block *);
+	void (*write_super) (struct super_block *);
+	void (*statfs) (struct super_block *, struct statfs *);
+	int (*remount_fs) (struct super_block *, int *, char *);
+};
+
+struct file_system_type {
+	struct super_block *(*read_super) (struct super_block *, void *, int);
+	char *name;
+	int requires_dev;
+};
+
 #ifdef __KERNEL__
 
 extern int register_blkdev(unsigned int, const char *, struct file_operations *);
@@ -231,8 +248,12 @@ extern struct inode_operations chrdev_inode_operations;
 extern int shrink_buffers(unsigned int priority);
 
 extern void ll_rw_block(int rw, int nr, struct buffer_head * bh[]);
+extern void brelse(struct buffer_head * buf);
 extern struct buffer_head * bread(dev_t dev, int block, int size);
 extern dev_t ROOT_DEV;
+
+extern void show_buffers(void);
+extern void mount_root(void);
 
 extern int char_read(struct inode *, struct file *, char *, int);
 extern int block_read(struct inode *, struct file *, char *, int);

@@ -8,6 +8,47 @@ struct gendisk *gendisk_head = NULL;
 static int current_minor = 0;
 extern int *blk_size[];
 
+static void extended_partition(struct gendisk *hd, int dev) {
+    struct buffer_head *bh;
+	struct partition *p;
+	unsigned long first_sector, this_sector;
+	int mask = (1 << hd->minor_shift) - 1;
+
+    first_sector = hd->part[MINOR(dev)].start_sect;
+    this_sector = first_sector;
+
+    while (1) {
+        if ((current_minor & mask) >= (4 + hd->max_p))
+            return;
+        if (!(bh = bread(dev, 0, 1024)))
+            return;
+        bh->b_dirt = 0;
+        bh->b_uptodate = 0;
+        if (*(unsigned short *) (bh->b_data + 510) == 0xAA55) {
+            p = (struct partition *) (0x1BE + bh->b_data);
+            if (p->sys_ind == EXTENDED_PARTITION ||
+                !(hd->part[current_minor].nr_sects = p->nr_sects))
+                goto done;
+            hd->part[current_minor].start_sect = this_sector + p->start_sect;
+            printk(" %s%c%d", hd->major_name,
+				'a'+(current_minor >> hd->minor_shift),
+				mask & current_minor);
+            current_minor++;
+            p++;
+            if (p->sys_ind != EXTENDED_PARTITION ||
+                !(hd->part[current_minor].nr_sects = p->nr_sects))
+                goto done;
+            hd->part[current_minor].start_sect = first_sector + p->start_sect;
+            this_sector = first_sector + p->start_sect;
+            dev = ((hd->major) << 8) | current_minor;
+            brelse(bh);
+        } else
+            goto done;
+    }
+done:
+    brelse(bh);
+}
+
 static void check_partition(struct gendisk *hd, unsigned int dev) {
     static int first_time = 1;
 	int i, minor = current_minor;
@@ -25,6 +66,41 @@ static void check_partition(struct gendisk *hd, unsigned int dev) {
 		return;
     }
     printk("  %s%c:", hd->major_name, 'a'+(minor >> hd->minor_shift));
+    current_minor += 4;
+    if (*(unsigned short *) (bh->b_data + 510) == 0xAA55) {
+        p = (struct partition *) (0x1BE + bh->b_data);
+        for (i = 1; i <= 4; minor++, i++, p++) {
+            if (!(hd->part[minor].nr_sects = p->nr_sects))
+                continue;
+            hd->part[minor].start_sect = first_sector + p->start_sect;
+            printk(" %s%c%d", hd->major_name,'a'+(minor >> hd->minor_shift), i);
+            if ((current_minor & 0x3f) >= 60)
+                continue;
+            if (p->sys_ind == EXTENDED_PARTITION) {
+                printk(" <");
+                extended_partition(hd, (hd->major << 8) | minor);
+                printk(" >");
+            }
+        }
+        if (*(unsigned short *) (bh->b_data + 0xfc) == 0x55AA) {
+            p = (struct partition *) (0x1BE + bh->b_data);
+            for (i = 4; i < 16; i++, current_minor++) {
+                p--;
+                if ((current_minor & mask) >= mask - 2)
+                    break;
+                if (!(p->start_sect && p->nr_sects))
+                    continue;
+                hd->part[current_minor].start_sect = p->start_sect;
+                hd->part[current_minor].nr_sects = p->nr_sects;
+                printk(" %s%c%d", hd->major_name,
+					'a'+(current_minor >> hd->minor_shift),
+					current_minor & mask);
+            }
+        }
+    } else
+        printk(" bad partition table");
+    printk("\n");
+	brelse(bh);
 }
 
 static void setup_dev(struct gendisk *dev) {
@@ -61,6 +137,8 @@ asmlinkage int sys_setup(void * BIOS) {
         setup_dev(p);
         nr += p->nr_real;
     }
-
+    // if (randisk_size)
+    //     rd_load();
+    mount_root();
     return 0;
 }

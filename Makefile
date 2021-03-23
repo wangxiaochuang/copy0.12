@@ -105,6 +105,7 @@ boot/bootsect: boot/bootsect.S include/linux/config.h
 tools/system: boot/head.o init/main.o tools/version.o linuxsubdirs
 	$(LD) $(LDFLAGS) -Ttext 0x1000 -e startup_32 boot/head.o init/main.o tools/version.o \
 	$(ARCHIVES) \
+	$(FILESYSTEMS) \
 	$(DRIVERS) \
 	$(LIBS) \
 	-o tools/system

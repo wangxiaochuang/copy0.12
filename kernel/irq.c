@@ -129,7 +129,7 @@ int irqaction(unsigned int irq, struct sigaction *new_sa) {
 	if (sa->sa_flags & SA_INTERRUPT)
 		set_intr_gate(0x20 + irq, fast_interrupt[irq]);
 	else
-		// 时钟中断执行顺序：IRQ0_interrupt -> do_IRQ -> irq_sigaction[irq].handler(do_timer)
+		// 中断执行顺序：IRQ0_interrupt -> do_IRQ -> irq_sigaction[irq].handler(do_timer)
 		set_intr_gate(0x20 + irq, interrupt[irq]);
 	if (irq < 8) {
 		cache_21 &= ~(1<<irq);
