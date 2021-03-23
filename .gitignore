@@ -9,3 +9,4 @@ include/linux/autoconf.h
 boot/bootsect
 boot/setup
 tools/system
+.version

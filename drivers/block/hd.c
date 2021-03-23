@@ -51,7 +51,34 @@ static void hd_times_out(void) {
 }
 
 static void do_hd_request(void) {
+	unsigned int block, dev;
+	unsigned int sec, head, cyl, track;
+	unsigned int nsect;
 
+	if (CURRENT && CURRENT->dev < 0) return;
+	if (DEVICE_INTR)
+		return;
+repeat:
+	timer_active &= ~(1 << HD_TIMER);
+	sti();
+	INIT_REQUEST;
+	dev = MINOR(CURRENT->dev);
+	block = CURRENT->sector;
+	nsect = CURRENT->nr_sectors;
+	if (dev >= (NR_HD << 6) || block >= hd[dev].nr_sects) {
+		end_request(0);
+		goto repeat;
+	}
+	block += hd[dev].start_sect;
+	dev >>= 6;
+	sec = block % hd_info[dev].sect + 1;
+	track = block / hd_info[dev].sect;
+	head = track % hd_info[dev].head;
+	cyl = track / hd_info[dev].head;
+	cli();
+	if (reset) {
+		
+	}
 }
 
 static int hd_ioctl(struct inode * inode, struct file * file,
