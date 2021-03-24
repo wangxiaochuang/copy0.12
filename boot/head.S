@@ -13,7 +13,6 @@
 .globl empty_bad_page
 .globl empty_bad_page_table
 .globl empty_zero_page
-.globl empty_zero_page
 .globl startup_32
 startup_32:
     cld

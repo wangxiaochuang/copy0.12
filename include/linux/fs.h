@@ -247,6 +247,10 @@ extern struct inode_operations chrdev_inode_operations;
 
 extern int shrink_buffers(unsigned int priority);
 
+extern void iput(struct inode * inode);
+extern struct inode * __iget(struct super_block * sb,int nr,int crsmnt);
+extern struct inode * iget(struct super_block * sb,int nr);
+extern struct inode * get_empty_inode(void);
 extern void ll_rw_block(int rw, int nr, struct buffer_head * bh[]);
 extern void brelse(struct buffer_head * buf);
 extern struct buffer_head * bread(dev_t dev, int block, int size);

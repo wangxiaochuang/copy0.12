@@ -19,4 +19,22 @@ static inline void unlock_buffer(struct buffer_head * bh) {
     wake_up(&bh->b_wait);
 }
 
+static void __wait_on_super(struct super_block *);
+
+static inline void wait_on_super(struct super_block * sb) {
+	if (sb->s_lock)
+		__wait_on_super(sb);
+}
+
+static inline void lock_super(struct super_block * sb) {
+	if (sb->s_lock)
+		__wait_on_super(sb);
+	sb->s_lock = 1;
+}
+
+static inline void unlock_super(struct super_block * sb) {
+	sb->s_lock = 0;
+	wake_up(&sb->s_wait);
+}
+
 #endif
