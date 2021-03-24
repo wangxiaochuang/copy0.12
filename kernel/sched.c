@@ -79,7 +79,7 @@ int sys_ni_syscall(void) {
 	return -EINVAL;
 }
 
-fn_ptr sys_call_table[] = { sys_setup, sys_ni_syscall, sys_fork, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,
+fn_ptr sys_call_table[] = { sys_setup, sys_ni_syscall, sys_fork, sys_ni_syscall, sys_ni_syscall, sys_open, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,
     sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,
     sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,
     sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall, sys_ni_syscall,

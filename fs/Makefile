@@ -31,7 +31,10 @@ ifdef CONFIG_HPFS_FS
 FS_SUBDIRS := $(FS_SUBDIRS) hpfs
 endif
 
-OBJS = super.o devices.o block_dev.o inode.o file_table.o buffer.o filesystems.o $(BINFMTS)
+OBJS = inode.o devices.o file_table.o buffer.o super.o open.o \
+	block_dev.o \
+	fifo.o filesystems.o $(BINFMTS)
+
 
 all: fs.o filesystems.a
 

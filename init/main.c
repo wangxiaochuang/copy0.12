@@ -3,6 +3,8 @@
 #include <asm/system.h>
 #include <asm/io.h>
 
+#include <linux/types.h>
+#include <linux/fcntl.h>
 #include <linux/config.h>
 #include <linux/sched.h>
 #include <linux/tty.h>
@@ -25,6 +27,7 @@ struct desc_struct default_ldt;
 static inline _syscall0(int, idle)
 static inline _syscall0(int, fork)
 static inline _syscall1(int, setup, void *, BIOS)
+static inline _syscall3(int, open, const char *, file, int, flag, int, mode)
 
 static char printbuf[1024];
 
@@ -359,5 +362,7 @@ asmlinkage void start_kernel(void) {
 void init(void) {
     int pid, i;
     setup((void *) &drive_info);
+    sprintf(term, "TERM=con%dx%d", ORIG_VIDEO_COLS, ORIG_VIDEO_LINES);
+    (void) open("/dev/tty1", O_RDWR, 0);
     for(;;);
 }

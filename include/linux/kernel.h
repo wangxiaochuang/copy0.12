@@ -31,6 +31,15 @@ NORET_TYPE void panic(const char * fmt, ...)
 	__attribute__ ((NORET_AND format (printf, 1, 2)));
 NORET_TYPE void do_exit(long error_code)
 	ATTRIB_NORET;
+unsigned long simple_strtoul(const char *,char **,unsigned int);
+int sprintf(char * buf, const char * fmt, ...);
+
+int session_of_pgrp(int pgrp);
+
+int kill_proc(int pid, int sig, int priv);
+int kill_pg(int pgrp, int sig, int priv);
+int kill_sl(int sess, int sig, int priv);
+
 asmlinkage int printk(const char *fmt, ...)
     __attribute__ ((format (printf, 1, 2)));
 

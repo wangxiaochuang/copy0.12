@@ -127,5 +127,19 @@ void mount_root(void) {
         if (!fs_type->requires_dev)
             continue;
         sb = read_super(ROOT_DEV, fs_type->name, root_mountflags, NULL, 1);
+        if (sb) {
+            printk("%s\n", fs_type->name);
+            inode = sb->s_mounted;
+            inode->i_count += 3;
+            sb->s_covered = inode;
+            sb->s_flags = root_mountflags;
+            current->pwd = inode;
+            current->root = inode;
+            printk ("VFS: Mounted root (%s filesystem)%s.\n",
+				fs_type->name,
+				(sb->s_flags & MS_RDONLY) ? " readonly" : "");
+			return;
+        }
     }
+    panic("VFS: Unable to mount root");
 }

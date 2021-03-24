@@ -2,8 +2,12 @@
 #define _LINUX_FS_H
 
 #include <linux/linkage.h>
+#include <linux/limits.h>
 #include <linux/wait.h>
 #include <linux/types.h>
+#include <linux/dirent.h>
+#include <linux/vfs.h>
+#include <linux/net.h>
 
 #undef NR_OPEN
 #define NR_OPEN 256
@@ -233,6 +237,9 @@ struct file_system_type {
 
 #ifdef __KERNEL__
 
+extern int getname(const char * filename, char **result);
+extern void putname(char * name);
+
 extern int register_blkdev(unsigned int, const char *, struct file_operations *);
 extern int unregister_blkdev(unsigned int major, const char * name);
 extern int blkdev_open(struct inode * inode, struct file * filp);
@@ -245,12 +252,16 @@ extern int chrdev_open(struct inode * inode, struct file * filp);
 extern struct file_operations def_chr_fops;
 extern struct inode_operations chrdev_inode_operations;
 
+extern void init_fifo(struct inode * inode);
+
 extern int shrink_buffers(unsigned int priority);
 
 extern void iput(struct inode * inode);
 extern struct inode * __iget(struct super_block * sb,int nr,int crsmnt);
 extern struct inode * iget(struct super_block * sb,int nr);
 extern struct inode * get_empty_inode(void);
+extern struct file * get_empty_filp(void);
+extern struct buffer_head * getblk(dev_t dev, int block, int size);
 extern void ll_rw_block(int rw, int nr, struct buffer_head * bh[]);
 extern void brelse(struct buffer_head * buf);
 extern struct buffer_head * bread(dev_t dev, int block, int size);
@@ -265,6 +276,8 @@ extern int read_ahead[];
 
 extern int char_write(struct inode *, struct file *, char *, int);
 extern int block_write(struct inode *, struct file *, char *, int);
+
+extern int generic_mmap(struct inode *, struct file *, unsigned long, size_t, int, unsigned long);
 
 extern int block_fsync(struct inode *, struct file *);
 extern int file_fsync(struct inode *, struct file *);

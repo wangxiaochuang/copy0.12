@@ -19,7 +19,7 @@ static inline void unlock_buffer(struct buffer_head * bh) {
     wake_up(&bh->b_wait);
 }
 
-static void __wait_on_super(struct super_block *);
+extern void __wait_on_super(struct super_block *);
 
 static inline void wait_on_super(struct super_block * sb) {
 	if (sb->s_lock)

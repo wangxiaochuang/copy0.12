@@ -75,6 +75,10 @@ repeat:
     return err;
 }
 
+int file_fsync (struct inode *inode, struct file *filp) {
+    return 0;
+}
+
 #define _hashfn(dev, block) (((unsigned)(dev^block)) % NR_HASH)
 #define hash(dev, block) hash_table[_hashfn(dev, block)]
 
