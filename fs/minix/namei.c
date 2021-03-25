@@ -8,6 +8,32 @@
 
 #include <asm/segment.h>
 
+static inline int namecompare(int len, int maxlen,
+	const char * name, const char * buffer) {
+	if (len >= maxlen || !buffer[len]) {
+		unsigned char same;
+		__asm__("repe ; cmpsb ; setz %0"
+			:"=q" (same)
+			:"S" ((long) name), "D" ((long) buffer), "c" (len));
+		return same;
+	}
+	return 0;
+}
+
+static int minix_match(int len, const char * name,
+	struct buffer_head * bh, unsigned long * offset,
+	struct minix_sb_info * info) {
+
+    struct minix_dir_entry *de;
+    de = (struct minix_dir_entry *) (bh->b_data + *offset);
+    *offset += info->s_dirsize;
+    if (!de->inode || len > info->s_namelen)
+		return 0;
+    if (!len && (de->name[0] == '.') && (de->name[1] == '\0'))
+        return 1;
+    return namecompare(len, info->s_namelen, name, de->name);
+}
+
 static struct buffer_head * minix_find_entry(struct inode * dir,
 	const char * name, int namelen, struct minix_dir_entry ** res_dir) {
     unsigned long block, offset;
@@ -27,6 +53,7 @@ static struct buffer_head * minix_find_entry(struct inode * dir,
     }
     bh = NULL;
     block = offset = 0;
+    // 每个inode的i_data存放了数据所在的block，这里的block是相对于i_data开头的计数，0开始
     while (block * BLOCK_SIZE + offset < dir->i_size) {
         if (!bh) {
             bh = minix_bread(dir, block, 0);
@@ -68,7 +95,7 @@ int minix_lookup(struct inode *dir, const char *name, int len,
     }
     ino = de->inode;
     brelse(bh);
-    if (!(result = iget(dir->i_sb, ino))) {
+    if (!(*result = iget(dir->i_sb, ino))) {
         iput(dir);
         return -EACCES;
     }

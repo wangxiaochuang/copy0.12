@@ -27,6 +27,8 @@ struct desc_struct default_ldt;
 static inline _syscall0(int, idle)
 static inline _syscall0(int, fork)
 static inline _syscall1(int, setup, void *, BIOS)
+static inline _syscall3(int,write,int,fd,const char *,buf,off_t,count)
+static inline _syscall1(int, dup, int, fd)
 static inline _syscall3(int, open, const char *, file, int, flag, int, mode)
 
 static char printbuf[1024];
@@ -359,10 +361,23 @@ asmlinkage void start_kernel(void) {
     };
 }
 
+static int printf(const char *fmt, ...) {
+	va_list args;
+	int i;
+
+	va_start(args, fmt);
+	write(1, printbuf, i=vsprintf(printbuf, fmt, args));
+	va_end(args);
+	return i;
+}
+
 void init(void) {
     int pid, i;
     setup((void *) &drive_info);
     sprintf(term, "TERM=con%dx%d", ORIG_VIDEO_COLS, ORIG_VIDEO_LINES);
     (void) open("/dev/tty1", O_RDWR, 0);
+    (void) dup(0);
+	(void) dup(0);
+    printf("............it is ok\n");
     for(;;);
 }

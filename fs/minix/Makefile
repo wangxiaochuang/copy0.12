@@ -1,4 +1,4 @@
-OBJS = truncate.o namei.o inode.o file.o dir.o symlink.o fsync.o
+OBJS = truncate.o namei.o inode.o file.o dir.o symlink.o fsync.o bitmap.o
 
 minix.o: $(OBJS)
 	$(LD) -r -o minix.o $(OBJS)

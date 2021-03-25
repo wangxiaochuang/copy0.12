@@ -148,18 +148,49 @@ static void read_inode(struct inode * inode) {
 	unlock_inode(inode);
 }
 
+int notify_change(int flags, struct inode * inode) {
+	if (inode->i_sb && inode->i_sb->s_op  &&
+	    inode->i_sb->s_op->notify_change)
+		return inode->i_sb->s_op->notify_change(flags, inode);
+	return 0;
+}
+
 int bmap(struct inode * inode, int block) {
     if (inode->i_op && inode->i_op->bmap)
-		return inode->i_op->bmap(inode,block);
+		return inode->i_op->bmap(inode, block);
 	return 0;
 }
 
 void invalidate_inodes(dev_t dev) {
+    struct inode * inode, * next;
+	int i;
 
+	next = first_inode;
+    for (i = nr_inodes; i > 0; i--) {
+        inode = next;
+        next = inode->i_next;
+        if (inode->i_dev != dev)
+            continue;
+        if (inode->i_count || inode->i_dirt || inode->i_lock) {
+			printk("VFS: inode busy on removed device %d/%d\n", MAJOR(dev), MINOR(dev));
+			continue;
+		}
+		clear_inode(inode);
+    }
 }
 
 void sync_inodes(dev_t dev) {
+    int i;
+	struct inode * inode;
 
+	inode = first_inode;
+    for (i = 0; i < nr_inodes * 2; i++, inode = inode->i_next) {
+        if (dev && inode->i_dev != dev)
+			continue;
+		wait_on_inode(inode);
+		if (inode->i_dirt)
+			write_inode(inode);
+    }
 }
 
 void iput(struct inode * inode) {

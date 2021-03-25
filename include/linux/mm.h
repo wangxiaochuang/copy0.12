@@ -1,9 +1,25 @@
 #ifndef _LINUX_MM_H
 #define _LINUX_MM_H
 
-#include <linux/sched.h>
 #include <linux/page.h>
+#include <linux/sched.h>
+#include <linux/errno.h>
 #include <linux/kernel.h>
+
+#define VERIFY_READ 0
+#define VERIFY_WRITE 1
+
+int __verify_write(unsigned long addr, unsigned long count);
+
+static inline int verify_area(int type, const void * addr, unsigned long size) {
+	if (TASK_SIZE <= (unsigned long) addr)
+		return -EFAULT;
+	if (size > TASK_SIZE - (unsigned long) addr)
+		return -EFAULT;
+	if (wp_works_ok || type == VERIFY_READ || !size)
+		return 0;
+	return __verify_write((unsigned long) addr, size);
+}
 
 struct vm_area_struct {
 	struct task_struct * vm_task;		/* VM area parameters */

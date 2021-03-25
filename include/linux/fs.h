@@ -49,6 +49,30 @@ extern unsigned long file_table_init(unsigned long start, unsigned long end);
 #define MS_SYNC     16 /* writes are synced at once */
 #define	MS_REMOUNT  32 /* alter flags of a mounted FS */
 
+#define MS_RMT_MASK (MS_RDONLY)
+
+#define MS_MGC_VAL 0xC0ED0000 /* magic flag number to indicate "new" flags */
+#define MS_MGC_MSK 0xffff0000 /* magic flag number mask */
+
+#define IS_RDONLY(inode) (((inode)->i_sb) && ((inode)->i_sb->s_flags & MS_RDONLY))
+#define IS_NOSUID(inode) ((inode)->i_flags & MS_NOSUID)
+#define IS_NODEV(inode) ((inode)->i_flags & MS_NODEV)
+#define IS_NOEXEC(inode) ((inode)->i_flags & MS_NOEXEC)
+#define IS_SYNC(inode) ((inode)->i_flags & MS_SYNC)
+
+#define BLKROSET 4701 /* set device read-only (0 = read-write) */
+#define BLKROGET 4702 /* get read-only status (0 = read_write) */
+#define BLKRRPART 4703 /* re-read partition table */
+#define BLKGETSIZE 4704 /* return device size */
+#define BLKFLSBUF 4705 /* flush buffer cache */
+
+/* these flags tell notify_change what is being changed */
+
+#define NOTIFY_SIZE	1
+#define NOTIFY_MODE	2
+#define NOTIFY_TIME	4
+#define NOTIFY_UIDGID	8
+
 typedef char buffer_block[BLOCK_SIZE];
 
 struct buffer_head {
@@ -256,11 +280,27 @@ extern void init_fifo(struct inode * inode);
 
 extern int shrink_buffers(unsigned int priority);
 
+extern void check_disk_change(dev_t dev);
+extern void invalidate_inodes(dev_t dev);
+extern void invalidate_buffers(dev_t dev);
+extern int floppy_change(struct buffer_head * first_block);
+extern void sync_inodes(dev_t dev);
+extern void sync_dev(dev_t dev);
+extern int fsync_dev(dev_t dev);
+extern void sync_supers(dev_t dev);
+extern int bmap(struct inode * inode,int block);
+extern int notify_change(int flags, struct inode * inode);
+extern int namei(const char * pathname, struct inode ** res_inode);
+extern int lnamei(const char * pathname, struct inode ** res_inode);
+extern int permission(struct inode * inode,int mask);
+extern int open_namei(const char * pathname, int flag, int mode,
+	struct inode ** res_inode, struct inode * base);
 extern void iput(struct inode * inode);
 extern struct inode * __iget(struct super_block * sb,int nr,int crsmnt);
 extern struct inode * iget(struct super_block * sb,int nr);
 extern struct inode * get_empty_inode(void);
 extern struct file * get_empty_filp(void);
+extern struct buffer_head * get_hash_table(dev_t dev, int block, int size);
 extern struct buffer_head * getblk(dev_t dev, int block, int size);
 extern void ll_rw_block(int rw, int nr, struct buffer_head * bh[]);
 extern void brelse(struct buffer_head * buf);

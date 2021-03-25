@@ -186,7 +186,7 @@ struct buffer_head * get_hash_table(dev_t dev, int block, int size) {
 }
 
 #define BADNESS(bh) (((bh)->b_dirt<<1)+(bh)->b_lock)
-struct buffer_head * getblk(dev_t dev, int block, int size) {
+struct buffer_head *getblk(dev_t dev, int block, int size) {
     struct buffer_head *bh, *tmp;
     int buffers;
     static int grow_size = 0;

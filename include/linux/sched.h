@@ -327,6 +327,41 @@ static inline void remove_wait_queue(struct wait_queue ** p, struct wait_queue *
 	restore_flags(flags);
 }
 
+extern void __down(struct semaphore * sem);
+
+static inline void down(struct semaphore * sem) {
+	if (sem->count <= 0)
+		__down(sem);
+	sem->count--;
+}
+
+static inline void up(struct semaphore * sem) {
+	sem->count++;
+	wake_up(&sem->wait);
+}	
+
+static inline unsigned long _get_base(char * addr) {
+	unsigned long __base;
+	__asm__("movb %3,%%dh\n\t"
+		"movb %2,%%dl\n\t"
+		"shll $16,%%edx\n\t"
+		"movw %1,%%dx"
+		:"=&d" (__base)
+		:"m" (*((addr)+2)),
+		 "m" (*((addr)+4)),
+		 "m" (*((addr)+7)));
+	return __base;
+}
+
+#define get_base(ldt) _get_base( ((char *)&(ldt)) )
+
+static inline unsigned long get_limit(unsigned long segment) {
+	unsigned long __limit;
+	__asm__("lsll %1,%0"
+		:"=r" (__limit):"r" (segment));
+	return __limit+1;
+}
+
 #define REMOVE_LINKS(p) do { unsigned long flags; \
 	save_flags(flags); cli(); \
 	(p)->next_task->prev_task = (p)->prev_task; \

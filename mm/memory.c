@@ -304,6 +304,18 @@ void do_wp_page(unsigned long error_code, unsigned long address,
 	*pg_table = 0;
 }
 
+int __verify_write(unsigned long start, unsigned long size) {
+    size--;
+    size += start & ~PAGE_MASK;
+    size >>= PAGE_SHIFT;
+    start &= PAGE_MASK;
+    do {
+        do_wp_page(1, start, current, 0);
+        start += PAGE_SIZE;
+    } while (size--);
+    return 0;
+}
+
 static inline void get_empty_page(struct task_struct * tsk, unsigned long address) {
     unsigned long tmp;
     if (!(tmp = get_free_page(GFP_KERNEL))) {

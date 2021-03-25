@@ -44,8 +44,9 @@ int do_open(const char * filename, int flags, int mode) {
     f->f_pos = 0;
     f->f_reada = 0;
     f->f_op = NULL;
-    if (inode->i_op)
+    if (inode->i_op) {
         f->f_op = inode->i_op->default_file_ops;
+    }
     if (f->f_op && f->f_op->open) {
         error = f->f_op->open(inode, f);
         if (error) {
@@ -67,4 +68,10 @@ asmlinkage int sys_open(const char * filename, int flags, int mode) {
     if (error)
         return error;
     error = do_open(tmp, flags, mode);
+    putname(tmp);
+    return error;
+}
+
+asmlinkage int sys_creat(const char * pathname, int mode) {
+	return sys_open(pathname, O_CREAT | O_WRONLY | O_TRUNC, mode);
 }

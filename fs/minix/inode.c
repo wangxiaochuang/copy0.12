@@ -139,17 +139,89 @@ void minix_statfs(struct super_block *sb, struct statfs *buf) {
 
 }
 
-int minix_bmap(struct inode *inode,int block) {
+int minix_bmap(struct inode *inode, int block) {
     return 0;
 }
 
 static struct buffer_head * inode_getblk(struct inode * inode, int nr, int create) {
-    return NULL;
+    int tmp;
+    unsigned short *p;
+    struct buffer_head *result;
+
+    p = inode->u.minix_i.i_data + nr;
+repeat:
+    tmp = *p;
+    if (tmp) {
+        result = getblk(inode->i_dev, tmp, BLOCK_SIZE);
+        if (tmp == *p)
+            return result;
+        brelse(result);
+        goto repeat;
+    }
+    if (!create)
+        return NULL;
+    tmp = minix_new_block(inode->i_sb);
+    if (!tmp)
+        return NULL;
+    result = getblk(inode->i_dev, tmp, BLOCK_SIZE);
+    if (*p) {
+        minix_free_block(inode->i_sb, tmp);
+        brelse(result);
+        goto repeat;
+    }
+    *p = tmp;
+    inode->i_ctime = CURRENT_TIME;
+    inode->i_dirt = 1;
+    return result;
 }
 
 static struct buffer_head * block_getblk(struct inode * inode, 
 	struct buffer_head * bh, int nr, int create) {
-    return NULL;
+    int tmp;
+	unsigned short *p;
+	struct buffer_head * result;
+
+	if (!bh)
+		return NULL;
+    if (!bh->b_uptodate) {
+        ll_rw_block(READ, 1, &bh);
+        wait_on_buffer(bh);
+        if (!bh->b_uptodate) {
+            brelse(bh);
+            return NULL;
+        }
+    }
+    p = nr + (unsigned short *) bh->b_data;
+repeat:
+    tmp = *p;
+    if (tmp) {
+        result = getblk(bh->b_dev, tmp, BLOCK_SIZE);
+		if (tmp == *p) {
+			brelse(bh);
+			return result;
+		}
+		brelse(result);
+		goto repeat;
+    }
+    if (!create) {
+		brelse(bh);
+		return NULL;
+	}
+	tmp = minix_new_block(inode->i_sb);
+	if (!tmp) {
+		brelse(bh);
+		return NULL;
+	}
+    result = getblk(bh->b_dev, tmp, BLOCK_SIZE);
+	if (*p) {
+		minix_free_block(inode->i_sb,tmp);
+		brelse(result);
+		goto repeat;
+	}
+	*p = tmp;
+	bh->b_dirt = 1;
+	brelse(bh);
+	return result;
 }
 
 struct buffer_head * minix_getblk(struct inode * inode, int block, int create) {
@@ -182,6 +254,11 @@ struct buffer_head * minix_bread(struct inode *inode, int block, int create) {
     if (!bh || bh->b_uptodate)
         return bh;
     ll_rw_block(READ, 1, &bh);
+    wait_on_buffer(bh);
+    if (bh->b_uptodate)
+        return bh;
+    brelse(bh);
+    return NULL;
 }
 
 void minix_read_inode(struct inode * inode) {
